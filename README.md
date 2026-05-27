@@ -1,0 +1,58 @@
+# Web Portal (Next.js, new schema)
+
+## 1) Setup
+- copy `.env.example` to `.env.local`
+- set your values
+- set `INTERAKT_OWNER_PHONE` in each company system `.env`
+
+## 2) DB change (one time)
+Add required columns/index:
+```sql
+alter table public.tally_companies add column if not exists access_token text;
+alter table public.tally_companies add column if not exists owner_phone_number text;
+create unique index if not exists tally_companies_access_token_key on public.tally_companies(access_token);
+```
+
+## 3) Install and run portal
+```bash
+npm install
+npm run dev
+```
+
+Owner link format:
+- `http://localhost:3000/overdue?access=OWNER_PHONE_DIGITS`
+- Example: `http://localhost:3000/overdue?access=9526830843`
+
+## 4) Notes for new schema
+- Overdue page reads `outstanding.mobile_number` (not `customer_number`)
+- Credit settings page reads customer base from `customers` table
+- Company isolation is enforced by `tally_companies.access_token -> tally_companies.Guid -> outstanding.company_id`
+
+## 5) Python-free background alerts
+This portal includes backend job endpoint:
+- `GET/POST /api/jobs/scan-alerts`
+
+It does:
+- scan Supabase outstanding + customers
+- compute overdue snapshots
+- compute credit-limit anomalies
+- send owner WhatsApp alerts (Interakt)
+- store logs in alert log tables
+
+### Required env vars (on deployed web portal)
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `INTERAKT_ENABLED=true`
+- `INTERAKT_API_KEY`
+- `INTERAKT_TEMPLATE_NAME`
+- `INTERAKT_CREDIT_ALERT_TEMPLATE_NAME`
+- `INTERAKT_COUNTRY_CODE`
+- `INTERAKT_PORTAL_BASE_URL`
+- `INTERAKT_CREDIT_PORTAL_BASE_URL` (optional, falls back to portal base)
+- `CRON_SECRET` (required for job endpoint protection)
+
+### How to trigger
+Call endpoint from scheduler (Vercel Cron / UptimeRobot / cron-job.org):
+- URL: `https://<your-domain>/api/jobs/scan-alerts`
+- Method: `POST`
+- Header: `Authorization: Bearer <CRON_SECRET>`

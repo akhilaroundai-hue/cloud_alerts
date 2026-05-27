@@ -1,0 +1,166 @@
+﻿:root {
+  --bg: #dff2df;
+  --card: #ffffff;
+  --text: #132016;
+  --muted: #4d5b50;
+  --accent: #0f8a5f;
+  --line: #dde3dc;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: radial-gradient(circle at top left, #f3fff0, var(--bg));
+  color: var(--text);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+main {
+  max-width: 1200px;
+  margin: 24px auto;
+  padding: 0 16px 24px;
+}
+header { margin-bottom: 16px; }
+h1 { margin: 0 0 6px; font-size: 28px; }
+p { margin: 0; color: var(--muted); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  overflow: auto;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+th, td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: 14px;
+}
+th { color: var(--muted); font-weight: 600; }
+.badge {
+  display: inline-block;
+  background: #e6f7ee;
+  color: #0f8a5f;
+  border: 1px solid #b9e6cf;
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.mobile-list {
+  display: none;
+}
+
+.mobile-item {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.mobile-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mobile-grid {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 4px 8px;
+  font-size: 13px;
+}
+
+.mobile-grid span:nth-child(odd) {
+  color: var(--muted);
+}
+
+.credit-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mobile-sent {
+  font-size: 12px;
+  color: #5f6b5f;
+  background: #e6ece6;
+  border-radius: 999px;
+  padding: 4px 8px;
+}
+
+button,
+input[type="text"] {
+  min-height: 38px;
+}
+
+@media (max-width: 900px) {
+  main {
+    margin: 14px auto;
+    padding: 0 10px 18px;
+  }
+
+  h1 {
+    font-size: 22px;
+  }
+
+  .card {
+    border-radius: 12px;
+    padding: 10px;
+  }
+
+  table {
+    min-width: 760px;
+  }
+
+  th,
+  td {
+    padding: 8px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  h1 {
+    font-size: 20px;
+  }
+
+  p {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .card {
+    padding: 8px;
+  }
+
+  .desktop-table {
+    display: none;
+  }
+
+  .mobile-list {
+    display: block;
+  }
+
+  .credit-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  button {
+    font-size: 13px;
+    padding: 6px 8px;
+  }
+
+  input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+  }
+}
