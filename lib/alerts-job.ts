@@ -47,6 +47,10 @@ function norm(v: string | null | undefined): string {
   return String(v ?? "").trim().toLowerCase();
 }
 
+function isUuidLike(v: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
+}
+
 async function sbSelect<T>(table: string, params: Record<string, string>): Promise<T[]> {
   const url = env("SUPABASE_URL");
   const key = env("SUPABASE_SERVICE_ROLE_KEY");
@@ -283,12 +287,15 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
     }
 
     try {
-      let products = await sbSelect<ProductRow>("products", {
-        select: "company_id,company_name,ItemName,ItemQuantity,reorder_level,reorder_quantity",
-        company_id: `eq.${companyGuid}`,
-        is_active: "eq.true",
-        limit: "20000",
-      });
+      let products: ProductRow[] = [];
+      if (isUuidLike(companyGuid)) {
+        products = await sbSelect<ProductRow>("products", {
+          select: "company_id,company_name,ItemName,ItemQuantity,reorder_level,reorder_quantity",
+          company_id: `eq.${companyGuid}`,
+          is_active: "eq.true",
+          limit: "20000",
+        });
+      }
       if (!products.length && companyName) {
         const allProducts = await sbSelect<ProductRow>("products", {
           select: "company_id,company_name,ItemName,ItemQuantity,reorder_level,reorder_quantity,is_active",
