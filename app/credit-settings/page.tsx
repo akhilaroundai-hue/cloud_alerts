@@ -39,10 +39,50 @@ async function getCustomers(companyId: string): Promise<Customer[]> {
   outstandingQuery.searchParams.set("company_id", `eq.${companyId}`);
   outstandingQuery.searchParams.set("limit", "20000");
 
-  const [customersRes, outstandingRes] = await Promise.all([
-    fetch(customersQuery.toString(), { headers, cache: "no-store" }),
-    fetch(outstandingQuery.toString(), { headers, cache: "no-store" }),
-  ]);
+  let customersRes = await fetch(customersQuery.toString(), { headers, cache: "no-store" });
+  let outstandingRes = await fetch(outstandingQuery.toString(), { headers, cache: "no-store" });
+
+  // Fallback for schemas where company_id does not match Guid.
+  if (!customersRes.ok || !outstandingRes.ok) {
+    const companyQuery = new URL(`${url}/rest/v1/tally_companies`);
+    companyQuery.searchParams.set("select", "company_name");
+    companyQuery.searchParams.set("Guid", `eq.${companyId}`);
+    companyQuery.searchParams.set("limit", "1");
+    const companyRes = await fetch(companyQuery.toString(), { headers, cache: "no-store" });
+    if (companyRes.ok) {
+      const companyRows = (await companyRes.json()) as Array<{ company_name?: string }>;
+      const companyName = String(companyRows?.[0]?.company_name || "").trim();
+      if (companyName) {
+        const allCustomersQuery = new URL(`${url}/rest/v1/customers`);
+        allCustomersQuery.searchParams.set("select", "customer_name,credit_limit,company_name,is_active");
+        allCustomersQuery.searchParams.set("is_active", "eq.true");
+        allCustomersQuery.searchParams.set("limit", "20000");
+        const allOutstandingQuery = new URL(`${url}/rest/v1/outstanding`);
+        allOutstandingQuery.searchParams.set("select", "customer_name,closing_balance,company_name");
+        allOutstandingQuery.searchParams.set("limit", "20000");
+        customersRes = await fetch(allCustomersQuery.toString(), { headers, cache: "no-store" });
+        outstandingRes = await fetch(allOutstandingQuery.toString(), { headers, cache: "no-store" });
+        if (customersRes.ok && outstandingRes.ok) {
+          const allCustomers = (await customersRes.json()) as Array<{ customer_name: string; credit_limit: string; company_name?: string }>;
+          const allOutstanding = (await outstandingRes.json()) as Array<{ customer_name: string; closing_balance: string; company_name?: string }>;
+          const n = (v: string) => v.trim().toLowerCase();
+          const scopedCustomers = allCustomers.filter((c) => n(String(c.company_name || "")) === n(companyName));
+          const scopedOutstanding = allOutstanding.filter((o) => n(String(o.company_name || "")) === n(companyName));
+          const totals = new Map<string, number>();
+          scopedOutstanding.forEach((row) => {
+            const k = keyOf(row.customer_name || "");
+            totals.set(k, (totals.get(k) || 0) + Math.abs(Number(row.closing_balance || 0)));
+          });
+          return scopedCustomers.map((customer) => ({
+            customer_name: customer.customer_name,
+            credit_limit: String(Math.abs(Number(customer.credit_limit || 0))),
+            outstanding_total: String(totals.get(keyOf(customer.customer_name)) || 0),
+          }));
+        }
+      }
+    }
+  }
+
   if (!customersRes.ok) throw new Error(`Customer fetch failed: ${customersRes.status}`);
   if (!outstandingRes.ok) throw new Error(`Outstanding fetch failed: ${outstandingRes.status}`);
 
@@ -80,32 +120,44 @@ async function getSettings(companyId: string): Promise<Setting[]> {
 }
 
 export default async function CreditSettingsPage({ searchParams }: { searchParams: { access?: string; token?: string; customer?: string } }) {
-  const accessToken = searchParams.access || searchParams.token || "";
-  const companyId = (await resolveCompanyIdByAccessToken(accessToken)) || (accessToken ? null : await resolveSingleCompanyId());
-  if (!companyId) {
-    return <main><header><h1>Unauthorized</h1><p>Invalid or missing access token.</p></header></main>;
+  try {
+    const accessToken = searchParams.access || searchParams.token || "";
+    const companyId = (await resolveCompanyIdByAccessToken(accessToken)) || (accessToken ? null : await resolveSingleCompanyId());
+    if (!companyId) {
+      return <main><header><h1>Unauthorized</h1><p>Invalid or missing access token.</p></header></main>;
+    }
+    const [customers, settings] = await Promise.all([getCustomers(companyId), getSettings(companyId)]);
+    const settingByLedger = new Map(settings.map((s) => [keyOf(s.ledger_name), s]));
+    const filteredCustomers = customers.filter((c) => {
+      const setting = settingByLedger.get(keyOf(c.customer_name));
+      const settingLimit = Number(setting?.credit_limit || 0);
+      const customerLimit = Number(c.credit_limit || 0);
+      return settingLimit > 0 || customerLimit > 0;
+    });
+    return (
+      <main>
+        <header>
+          <h1>Credit Limits</h1>
+          <p>Set customer alert threshold percentages.</p>
+        </header>
+        <CreditSettingsClient
+          companyId={companyId}
+          accessToken={accessToken}
+          customers={filteredCustomers}
+          settings={settings}
+          initialSearch={searchParams.customer || ""}
+        />
+      </main>
+    );
+  } catch (e) {
+    return (
+      <main>
+        <header>
+          <h1>Credit Limits</h1>
+          <p>Failed to load credit settings.</p>
+          <p>{e instanceof Error ? e.message : "Unknown server error"}</p>
+        </header>
+      </main>
+    );
   }
-  const [customers, settings] = await Promise.all([getCustomers(companyId), getSettings(companyId)]);
-  const settingByLedger = new Map(settings.map((s) => [keyOf(s.ledger_name), s]));
-  const filteredCustomers = customers.filter((c) => {
-    const setting = settingByLedger.get(keyOf(c.customer_name));
-    const settingLimit = Number(setting?.credit_limit || 0);
-    const customerLimit = Number(c.credit_limit || 0);
-    return settingLimit > 0 || customerLimit > 0;
-  });
-  return (
-    <main>
-      <header>
-        <h1>Credit Limits</h1>
-        <p>Set customer alert threshold percentages.</p>
-      </header>
-      <CreditSettingsClient
-        companyId={companyId}
-        accessToken={accessToken}
-        customers={filteredCustomers}
-        settings={settings}
-        initialSearch={searchParams.customer || ""}
-      />
-    </main>
-  );
 }
