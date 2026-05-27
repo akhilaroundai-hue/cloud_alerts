@@ -12,7 +12,7 @@ type Outstanding = {
   overdue_days: number | null;
   amount: string;
   closing_balance: string;
-  voucher_type: string | null;
+  voucher_type?: string | null;
 };
 
 function num(v: string | number | null | undefined): string {
@@ -28,7 +28,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 
   const query = new URL(`${url}/rest/v1/outstanding`);
-  query.searchParams.set("select", "company_id,customer_name,mobile_number,invoicenumber,date,duedate,overdue_days,amount,closing_balance,voucher_type");
+  query.searchParams.set("select", "company_id,customer_name,mobile_number,invoicenumber,date,duedate,overdue_days,amount,closing_balance");
   query.searchParams.set("company_id", `eq.${companyId}`);
   query.searchParams.set("bill_type", "eq.receivable");
   query.searchParams.set("order", "customer_name.asc,duedate.asc");
@@ -46,7 +46,8 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
     const txt = await res.text();
     throw new Error(`Supabase fetch failed: ${res.status} ${txt.slice(0, 300)}`);
   }
-  return (await res.json()) as Outstanding[];
+  const rows = (await res.json()) as Array<Omit<Outstanding, "voucher_type">>;
+  return rows.map((r) => ({ ...r, voucher_type: null }));
 }
 
 export default async function OverduePage({ searchParams }: { searchParams: { limit?: string; access?: string; token?: string } }) {
