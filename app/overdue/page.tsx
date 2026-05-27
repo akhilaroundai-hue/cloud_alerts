@@ -65,33 +65,45 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
 }
 
 export default async function OverduePage({ searchParams }: { searchParams: { limit?: string; access?: string; token?: string } }) {
-  const accessToken = searchParams.access || searchParams.token || "";
-  const companyId = (await resolveCompanyIdByAccessToken(accessToken)) || (accessToken ? null : await resolveSingleCompanyId());
-  if (!companyId) {
+  try {
+    const accessToken = searchParams.access || searchParams.token || "";
+    const companyId = (await resolveCompanyIdByAccessToken(accessToken)) || (accessToken ? null : await resolveSingleCompanyId());
+    if (!companyId) {
+      return (
+        <main>
+          <header>
+            <h1>Unauthorized</h1>
+            <p>Invalid or missing access token.</p>
+          </header>
+        </main>
+      );
+    }
+
+    const limit = Math.min(Math.max(Number(searchParams.limit || 5000), 1), 20000);
+    const rows = await getOverdueRows(limit, companyId);
+    const total = rows.reduce((acc, r) => acc + Number(r.closing_balance || 0), 0);
+    const host = headers().get("host") || "localhost:3000";
+
     return (
       <main>
         <header>
-          <h1>Unauthorized</h1>
-          <p>Invalid or missing access token.</p>
+          <h1>RoundALERTS</h1>
+          <p>
+            Showing {rows.length} overdue rows | Total due: Rs {num(total)} | Host: {host}
+          </p>
+        </header>
+        <OverdueClient rows={rows} accessToken={accessToken} />
+      </main>
+    );
+  } catch (e) {
+    return (
+      <main>
+        <header>
+          <h1>RoundALERTS</h1>
+          <p>Failed to load overdue data.</p>
+          <p>{e instanceof Error ? e.message : "Unknown server error"}</p>
         </header>
       </main>
     );
   }
-
-  const limit = Math.min(Math.max(Number(searchParams.limit || 5000), 1), 20000);
-  const rows = await getOverdueRows(limit, companyId);
-  const total = rows.reduce((acc, r) => acc + Number(r.closing_balance || 0), 0);
-  const host = headers().get("host") || "localhost:3000";
-
-  return (
-    <main>
-      <header>
-        <h1>RoundALERTS</h1>
-        <p>
-          Showing {rows.length} overdue rows | Total due: Rs {num(total)} | Host: {host}
-        </p>
-      </header>
-      <OverdueClient rows={rows} accessToken={accessToken} />
-    </main>
-  );
 }
