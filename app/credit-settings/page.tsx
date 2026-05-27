@@ -50,7 +50,7 @@ async function getCustomers(companyId: string): Promise<Customer[]> {
   if (!customersRes.ok || !outstandingRes.ok || customersRowsById.length === 0) {
     const companyQuery = new URL(`${url}/rest/v1/tally_companies`);
     companyQuery.searchParams.set("select", "company_name");
-    companyQuery.searchParams.set("Guid", `eq.${companyId}`);
+    companyQuery.searchParams.set("id", `eq.${companyId}`);
     companyQuery.searchParams.set("limit", "1");
     const companyRes = await fetch(companyQuery.toString(), { headers, cache: "no-store" });
     if (companyRes.ok) {

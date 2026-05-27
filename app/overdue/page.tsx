@@ -34,6 +34,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
     `${baseFields},customer_number`,
   ];
 
+  let rowsById: Outstanding[] = [];
   for (const selectFields of attempts) {
     const query = new URL(`${url}/rest/v1/outstanding`);
     query.searchParams.set("select", selectFields);
@@ -47,7 +48,43 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
       continue;
     }
     const rawRows = (await res.json()) as Array<Record<string, string | number | null>>;
-    return rawRows.map((r) => ({
+    rowsById = rawRows.map((r) => ({
+      company_id: (r.company_id as string | null) ?? null,
+      customer_name: String(r.customer_name || ""),
+      mobile_number: (r.mobile_number ?? r.customer_number ?? null) as string | number | null,
+      invoicenumber: String(r.invoicenumber || ""),
+      date: String(r.date || ""),
+      duedate: (r.duedate as string | null) ?? null,
+      overdue_days: (r.overdue_days as number | null) ?? null,
+      amount: String(r.amount ?? "0"),
+      closing_balance: String(r.closing_balance ?? "0"),
+      voucher_type: null,
+    }));
+    if (rowsById.length > 0) return rowsById;
+  }
+
+  // Fallback by company_name when company_id mapping differs between systems.
+  const companyQuery = new URL(`${url}/rest/v1/tally_companies`);
+  companyQuery.searchParams.set("select", "company_name");
+  companyQuery.searchParams.set("id", `eq.${companyId}`);
+  companyQuery.searchParams.set("limit", "1");
+  const companyRes = await fetch(companyQuery.toString(), { headers, cache: "no-store" });
+  if (!companyRes.ok) return rowsById;
+  const companyRows = (await companyRes.json()) as Array<{ company_name?: string }>;
+  const companyName = String(companyRows?.[0]?.company_name || "").trim().toLowerCase();
+  if (!companyName) return rowsById;
+
+  for (const selectFields of attempts) {
+    const query = new URL(`${url}/rest/v1/outstanding`);
+    query.searchParams.set("select", selectFields + ",company_name");
+    query.searchParams.set("bill_type", "eq.receivable");
+    query.searchParams.set("order", "customer_name.asc,duedate.asc");
+    query.searchParams.set("limit", "20000");
+    const res = await fetch(query.toString(), { headers, cache: "no-store" });
+    if (!res.ok) continue;
+    const rawRows = (await res.json()) as Array<Record<string, string | number | null>>;
+    const filtered = rawRows.filter((r) => String(r.company_name || "").trim().toLowerCase() === companyName);
+    return filtered.map((r) => ({
       company_id: (r.company_id as string | null) ?? null,
       customer_name: String(r.customer_name || ""),
       mobile_number: (r.mobile_number ?? r.customer_number ?? null) as string | number | null,
@@ -61,7 +98,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
     }));
   }
 
-  return [];
+  return rowsById;
 }
 
 export default async function OverduePage({ searchParams }: { searchParams: { limit?: string; access?: string; token?: string } }) {
