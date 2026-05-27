@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
     const interaktBase = process.env.INTERAKT_BASE_URL || "https://api.interakt.ai";
     const countryCode = process.env.INTERAKT_COUNTRY_CODE || "+91";
     const templateName = process.env.INTERAKT_CUSTOMER_TEMPLATE_NAME || "customer_payment_remind";
+    const senderName = process.env.INTERAKT_SENDER_NAME || "RoundTally";
     const ownerPhoneRaw =
       String(company?.owner_number || "") ||
       String(company?.owner_phone_number || "") ||
@@ -80,31 +81,57 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const payload = {
-        countryCode,
-        phoneNumber: phone,
-        type: "Template",
-        template: {
-          name: templateName,
-          languageCode: "en",
-          bodyValues: [row.customer_name || "Customer", String(row.closing_balance || "0"), row.invoicenumber || "-"],
-        },
+      const sendPayload = async (bodyValues: string[]) => {
+        const payload = {
+          countryCode,
+          phoneNumber: phone,
+          type: "Template",
+          template: {
+            name: templateName,
+            languageCode: "en",
+            bodyValues,
+          },
+        };
+        const res = await fetch(`${interaktBase.replace(/\/$/, "")}/v1/public/message/`, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${interaktKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+        let j: unknown = null;
+        try {
+          j = await res.json();
+        } catch {
+          j = await res.text();
+        }
+        return { res, j };
       };
 
-      const res = await fetch(`${interaktBase.replace(/\/$/, "")}/v1/public/message/`, {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${interaktKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      // Template variants supported:
+      // 4 vars: customer, sender/company, amount, invoice
+      // 3 vars: customer, amount, invoice
+      const primaryValues = [
+        row.customer_name || "Customer",
+        String(row.company_name || senderName),
+        String(row.closing_balance || "0"),
+        row.invoicenumber || "-",
+      ];
+      const fallbackValues = [
+        row.customer_name || "Customer",
+        String(row.closing_balance || "0"),
+        row.invoicenumber || "-",
+      ];
 
-      let j: unknown = null;
-      try {
-        j = await res.json();
-      } catch {
-        j = await res.text();
+      let { res, j } = await sendPayload(primaryValues);
+      if (!res.ok) {
+        const txt = typeof j === "string" ? j : JSON.stringify(j);
+        if (txt.includes("expected number of params") || txt.includes("bodyValues")) {
+          const retry = await sendPayload(fallbackValues);
+          res = retry.res;
+          j = retry.j;
+        }
       }
 
       if (res.ok) {
