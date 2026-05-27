@@ -19,6 +19,15 @@ type OutstandingRow = {
   bill_type: string | null;
 };
 
+type ProductRow = {
+  company_id: string | null;
+  company_name: string | null;
+  ItemName: string | null;
+  ItemQuantity: string | number | null;
+  reorder_level: string | number | null;
+  reorder_quantity: string | number | null;
+};
+
 function env(name: string): string {
   const v = process.env[name];
   if (!v) throw new Error(`Missing ${name}`);
@@ -122,12 +131,20 @@ function buildCreditLink(accessToken: string): string | undefined {
   return b.endsWith("/credit-settings") ? `${b}?access=${accessToken}` : `${b}/credit-settings?access=${accessToken}`;
 }
 
-export async function runAlertsJob(): Promise<{ companies: number; overdueSent: number; creditSent: number }> {
+function buildReorderLink(accessToken: string): string | undefined {
+  const base = (process.env.INTERAKT_REORDER_PORTAL_BASE_URL || process.env.INTERAKT_PORTAL_BASE_URL)?.trim();
+  if (!base) return undefined;
+  const b = base.replace(/\/$/, "");
+  return b.endsWith("/reorder") ? `${b}?access=${accessToken}` : `${b}/reorder?access=${accessToken}`;
+}
+
+export async function runAlertsJob(): Promise<{ companies: number; overdueSent: number; creditSent: number; reorderSent: number }> {
   const overdueThreshold = Number(process.env.OVERDUE_CUSTOMERS_THRESHOLD || "1");
   const overdueDaysThreshold = Number(process.env.OVERDUE_DAYS_THRESHOLD || "1");
   const creditThresholdPercent = Number(process.env.DEFAULT_CREDIT_THRESHOLD_PERCENT || "90");
   const overdueTemplate = process.env.INTERAKT_TEMPLATE_NAME || "";
   const creditTemplate = process.env.INTERAKT_CREDIT_ALERT_TEMPLATE_NAME || "";
+  const reorderTemplate = process.env.INTERAKT_REORDER_ALERT_TEMPLATE_NAME || "";
   const interaktEnabled = String(process.env.INTERAKT_ENABLED || "false").toLowerCase() === "true";
   const today = new Date().toISOString().slice(0, 10);
 
@@ -138,6 +155,7 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
 
   let overdueSent = 0;
   let creditSent = 0;
+  let reorderSent = 0;
 
   for (const company of companies) {
     if (company.is_active === false) continue;
@@ -263,7 +281,60 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
         }
       }
     }
+
+    let products = await sbSelect<ProductRow>("products", {
+      select: "company_id,company_name,ItemName,ItemQuantity,reorder_level,reorder_quantity",
+      company_id: `eq.${companyGuid}`,
+      is_active: "eq.true",
+      limit: "20000",
+    });
+    if (!products.length && companyName) {
+      const allProducts = await sbSelect<ProductRow>("products", {
+        select: "company_id,company_name,ItemName,ItemQuantity,reorder_level,reorder_quantity,is_active",
+        is_active: "eq.true",
+        limit: "20000",
+      });
+      products = allProducts.filter((p) => norm(p.company_name) === norm(companyName));
+    }
+    const reorderItems = products.filter((p) => {
+      const level = n(p.reorder_level);
+      const qty = n(p.ItemQuantity);
+      return level > 0 && qty === level;
+    });
+
+    if (reorderTemplate && reorderItems.length > 0) {
+      try {
+        const resp = await sendInteraktTemplate(
+          ownerPhone,
+          reorderTemplate,
+          [String(reorderItems.length)],
+          buildReorderLink(accessToken),
+        );
+        reorderSent += 1;
+        await sbInsert("reorder_alert_logs", [
+          {
+            snapshot_date: today,
+            company_id: companyGuid,
+            owner_phone_number: ownerPhone,
+            item_count: reorderItems.length,
+            status: "sent",
+            response_json: resp,
+          },
+        ]).catch(() => Promise.resolve());
+      } catch (e) {
+        await sbInsert("reorder_alert_logs", [
+          {
+            snapshot_date: today,
+            company_id: companyGuid,
+            owner_phone_number: ownerPhone,
+            item_count: reorderItems.length,
+            status: "failed",
+            response_json: { error: e instanceof Error ? e.message : "Unknown error" },
+          },
+        ]).catch(() => Promise.resolve());
+      }
+    }
   }
 
-  return { companies: companies.length, overdueSent, creditSent };
+  return { companies: companies.length, overdueSent, creditSent, reorderSent };
 }

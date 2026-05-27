@@ -15,10 +15,16 @@ export default function Home() {
           <Link href="/credit-settings">Open Credit Settings</Link>
         </p>
         <p>
+          <Link href="/reorder">Open Reorder Alerts</Link>
+        </p>
+        <p>
           Open using a company link: <code>/overdue?access=COMPANY_TOKEN</code>
         </p>
         <p>
           Credit settings link: <code>/credit-settings?access=COMPANY_TOKEN</code>
+        </p>
+        <p>
+          Reorder link: <code>/reorder?access=COMPANY_TOKEN</code>
         </p>
       </div>
     </main>

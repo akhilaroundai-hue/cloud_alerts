@@ -34,8 +34,10 @@ This portal includes backend job endpoint:
 
 It does:
 - scan Supabase outstanding + customers
+- scan low-stock products for reorder alerts
 - compute overdue snapshots
 - compute credit-limit anomalies
+- detect reorder items where `ItemQuantity = reorder_level`
 - send owner WhatsApp alerts (Interakt)
 - store logs in alert log tables
 
@@ -46,9 +48,11 @@ It does:
 - `INTERAKT_API_KEY`
 - `INTERAKT_TEMPLATE_NAME`
 - `INTERAKT_CREDIT_ALERT_TEMPLATE_NAME`
+- `INTERAKT_REORDER_ALERT_TEMPLATE_NAME`
 - `INTERAKT_COUNTRY_CODE`
 - `INTERAKT_PORTAL_BASE_URL`
 - `INTERAKT_CREDIT_PORTAL_BASE_URL` (optional, falls back to portal base)
+- `INTERAKT_REORDER_PORTAL_BASE_URL` (optional, falls back to portal base + `/reorder`)
 - `CRON_SECRET` (required for job endpoint protection)
 
 ### How to trigger
