@@ -50,7 +50,7 @@ export async function resolveCompanyIdByAccessToken(accessToken: string): Promis
 
   for (const candidate of candidates) {
     const query = new URL(`${url}/rest/v1/tally_companies`);
-    query.searchParams.set("select", "Guid");
+    query.searchParams.set("select", "id");
     query.searchParams.set("access_token", `eq.${candidate}`);
     query.searchParams.set("limit", "1");
 
@@ -67,9 +67,9 @@ export async function resolveCompanyIdByAccessToken(accessToken: string): Promis
       throw new Error(`Company token lookup failed: ${res.status} ${txt.slice(0, 300)}`);
     }
 
-    const rows = (await res.json()) as Array<{ Guid?: string }>;
-    const guid = rows?.[0]?.Guid;
-    if (guid) return guid;
+    const rows = (await res.json()) as Array<{ id?: string }>;
+    const id = rows?.[0]?.id;
+    if (id) return id;
   }
 
   // Automatic fallback: if access_token wasn't populated for a new company yet,
@@ -78,7 +78,7 @@ export async function resolveCompanyIdByAccessToken(accessToken: string): Promis
     const digits = digitsOnly(candidate);
     if (!digits) continue;
     const query = new URL(`${url}/rest/v1/tally_companies`);
-    query.searchParams.set("select", "Guid");
+    query.searchParams.set("select", "id");
     query.searchParams.set("owner_number", `eq.${digits}`);
     query.searchParams.set("limit", "1");
 
@@ -95,9 +95,9 @@ export async function resolveCompanyIdByAccessToken(accessToken: string): Promis
       throw new Error(`Company owner lookup failed: ${res.status} ${txt.slice(0, 300)}`);
     }
 
-    const rows = (await res.json()) as Array<{ Guid?: string }>;
-    const guid = rows?.[0]?.Guid;
-    if (guid) return guid;
+    const rows = (await res.json()) as Array<{ id?: string }>;
+    const id = rows?.[0]?.id;
+    if (id) return id;
   }
   return null;
 }
@@ -108,7 +108,7 @@ export async function resolveSingleCompanyId(): Promise<string | null> {
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 
   const query = new URL(`${url}/rest/v1/tally_companies`);
-  query.searchParams.set("select", "Guid");
+  query.searchParams.set("select", "id");
   query.searchParams.set("order", "updated_at.desc");
   query.searchParams.set("limit", "2");
 
@@ -125,7 +125,7 @@ export async function resolveSingleCompanyId(): Promise<string | null> {
     throw new Error(`Company fallback lookup failed: ${res.status} ${txt.slice(0, 300)}`);
   }
 
-  const rows = (await res.json()) as Array<{ Guid?: string }>;
-  if (rows.length === 1 && rows[0]?.Guid) return rows[0].Guid;
+  const rows = (await res.json()) as Array<{ id?: string }>;
+  if (rows.length === 1 && rows[0]?.id) return rows[0].id;
   return null;
 }
