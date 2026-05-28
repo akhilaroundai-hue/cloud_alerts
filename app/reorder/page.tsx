@@ -86,26 +86,47 @@ export default async function ReorderPage({ searchParams }: { searchParams: { ac
           <p>Showing {rows.length} items where stock reached reorder level | Host: {host}</p>
         </header>
         <div className="card">
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Current Qty</th>
-                <th>Reorder Level</th>
-                <th>Suggested Reorder Qty</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={`${r.ItemName || "item"}-${i}`}>
-                  <td>{r.ItemName || "-"}</td>
-                  <td>{n(r.ItemQuantity)}</td>
-                  <td>{n(r.reorder_level)}</td>
-                  <td>{n(r.reorder_quantity)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {rows.length === 0 ? (
+            <p>No reorder items found.</p>
+          ) : (
+            <>
+              <table className="desktop-table reorder-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Current Qty</th>
+                    <th>Reorder Level</th>
+                    <th>Suggested Reorder Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={`${r.ItemName || "item"}-${i}`}>
+                      <td>{r.ItemName || "-"}</td>
+                      <td>{n(r.ItemQuantity)}</td>
+                      <td>{n(r.reorder_level)}</td>
+                      <td>{n(r.reorder_quantity)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="mobile-list">
+                {rows.map((r, i) => (
+                  <div className="mobile-item" key={`${r.ItemName || "item-mobile"}-${i}`}>
+                    <div className="mobile-item-top">
+                      <strong>{r.ItemName || "-"}</strong>
+                      <span className="badge">Reorder</span>
+                    </div>
+                    <div className="mobile-grid">
+                      <span>Current Qty</span><span>{n(r.ItemQuantity)}</span>
+                      <span>Reorder Level</span><span>{n(r.reorder_level)}</span>
+                      <span>Suggested Qty</span><span>{n(r.reorder_quantity)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </main>
     );
