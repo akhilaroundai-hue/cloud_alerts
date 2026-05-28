@@ -49,7 +49,6 @@ export default async function DaybookPage({ searchParams }: { searchParams: { ac
                     <th>Voucher No</th>
                     <th>Reference</th>
                     <th>Amount</th>
-                    <th>Status</th>
                     <th>Narration</th>
                   </tr>
                 </thead>
@@ -62,7 +61,6 @@ export default async function DaybookPage({ searchParams }: { searchParams: { ac
                       <td>{row.voucher_number || "-"}</td>
                       <td>{row.reference_number || "-"}</td>
                       <td>Rs {formatAmount(row.net_amount ?? row.amount)}</td>
-                      <td>{row.payment_status || "-"}</td>
                       <td>{row.narration || row.remarks || "-"}</td>
                     </tr>
                   ))}
@@ -80,7 +78,6 @@ export default async function DaybookPage({ searchParams }: { searchParams: { ac
                       <span>Voucher</span><span>{row.voucher_number || "-"}</span>
                       <span>Reference</span><span>{row.reference_number || "-"}</span>
                       <span>Amount</span><span>Rs {formatAmount(row.net_amount ?? row.amount)}</span>
-                      <span>Status</span><span>{row.payment_status || "-"}</span>
                       <span>Narration</span><span>{row.narration || row.remarks || "-"}</span>
                     </div>
                   </div>
