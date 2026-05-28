@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { businessDate, formatAmount, getCompanyScope, getDaybookRows, numberValue } from "../../lib/daybook";
 import { resolveCompanyIdByAccessToken } from "../../lib/tenant";
 
@@ -25,14 +24,13 @@ export default async function DaybookPage({ searchParams }: { searchParams: { ac
     const date = searchParams.date || businessDate();
     const rows = await getDaybookRows(scope, date);
     const total = rows.reduce((acc, row) => acc + numberValue(row.net_amount ?? row.amount), 0);
-    const host = headers().get("host") || "localhost:3000";
 
     return (
       <main>
         <header>
           <h1>Today&apos;s Daybook</h1>
           <p>
-            {scope.company_name || "Company"} | {displayDate(date)} | {rows.length} transactions | Total Rs {formatAmount(total)} | Host: {host}
+            {scope.company_name || "Company"} | {displayDate(date)} | {rows.length} transactions | Total Rs {formatAmount(total)}
           </p>
         </header>
         <div className="card">

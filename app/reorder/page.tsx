@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { resolveCompanyIdByAccessToken, resolveSingleCompanyId } from "../../lib/tenant";
 
 type ProductRow = {
@@ -78,12 +77,11 @@ export default async function ReorderPage({ searchParams }: { searchParams: { ac
       return <main><header><h1>Unauthorized</h1><p>Invalid or missing access token.</p></header></main>;
     }
     const rows = await getReorderRows(companyId);
-    const host = headers().get("host") || "localhost:3000";
     return (
       <main>
         <header>
           <h1>Reorder Alert</h1>
-          <p>Showing {rows.length} items where stock reached reorder level | Host: {host}</p>
+          <p>Showing {rows.length} items where stock reached reorder level</p>
         </header>
         <div className="card">
           {rows.length === 0 ? (

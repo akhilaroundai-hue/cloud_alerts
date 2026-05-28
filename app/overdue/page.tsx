@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import OverdueClient from "./overdue-client";
 import { resolveCompanyIdByAccessToken, resolveSingleCompanyId } from "../../lib/tenant";
 
@@ -119,14 +118,13 @@ export default async function OverduePage({ searchParams }: { searchParams: { li
     const limit = Math.min(Math.max(Number(searchParams.limit || 5000), 1), 20000);
     const rows = await getOverdueRows(limit, companyId);
     const total = rows.reduce((acc, r) => acc + Number(r.closing_balance || 0), 0);
-    const host = headers().get("host") || "localhost:3000";
 
     return (
       <main>
         <header>
           <h1>RoundALERTS</h1>
           <p>
-            Showing {rows.length} overdue rows | Total due: Rs {num(total)} | Host: {host}
+            Showing {rows.length} overdue rows | Total due: Rs {num(total)}
           </p>
         </header>
         <OverdueClient rows={rows} accessToken={accessToken} />
