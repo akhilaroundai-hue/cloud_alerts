@@ -152,7 +152,16 @@ function buildDaybookLink(accessToken: string): string | undefined {
   return b.endsWith("/daybook") ? `${b}?access=${accessToken}` : `${b}/daybook?access=${accessToken}`;
 }
 
-export async function runAlertsJob(): Promise<{ companies: number; overdueSent: number; creditSent: number; reorderSent: number; daybookSent: number }> {
+export async function runAlertsJob(): Promise<{
+  companies: number;
+  overdueSent: number;
+  creditSent: number;
+  reorderSent: number;
+  daybookSent: number;
+  daybookSkipped: number;
+  daybookFailed: number;
+  daybookRows: number;
+}> {
   const overdueThreshold = Number(process.env.OVERDUE_CUSTOMERS_THRESHOLD || "1");
   const overdueDaysThreshold = Number(process.env.OVERDUE_DAYS_THRESHOLD || "1");
   const creditThresholdPercent = Number(process.env.DEFAULT_CREDIT_THRESHOLD_PERCENT || "90");
@@ -172,6 +181,9 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
   let creditSent = 0;
   let reorderSent = 0;
   let daybookSent = 0;
+  let daybookSkipped = 0;
+  let daybookFailed = 0;
+  let daybookRowsTotal = 0;
 
   for (const company of companies) {
     if (company.is_active === false) continue;
@@ -275,6 +287,7 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
           { id: String(company.id || companyGuid), Guid: companyGuid || null, company_name: companyName || null },
           today,
         );
+        daybookRowsTotal += daybookRows.length;
         const daybookAmount = daybookRows.reduce((acc, row) => acc + numberValue(row.net_amount ?? row.amount), 0);
         const logCompanyId = companyGuid || String(company.id || "");
         const existingLogs = await sbSelect<{ id?: string }>("daybook_alert_logs", {
@@ -300,6 +313,7 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
             },
           ]).catch(() => Promise.resolve());
         } else if (daybookRows.length > 0) {
+          daybookSkipped += 1;
           await sbInsert("daybook_alert_logs", [
             {
               snapshot_date: today,
@@ -311,8 +325,11 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
               response_json: { reason: "already_sent" },
             },
           ]).catch(() => Promise.resolve());
+        } else {
+          daybookSkipped += 1;
         }
       } catch (e) {
+        daybookFailed += 1;
         await sbInsert("daybook_alert_logs", [
           {
             snapshot_date: today,
@@ -325,6 +342,8 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
           },
         ]).catch(() => Promise.resolve());
       }
+    } else {
+      daybookSkipped += 1;
     }
 
     if (triggered && overdueTemplate) {
@@ -420,5 +439,5 @@ export async function runAlertsJob(): Promise<{ companies: number; overdueSent: 
     }
   }
 
-  return { companies: companies.length, overdueSent, creditSent, reorderSent, daybookSent };
+  return { companies: companies.length, overdueSent, creditSent, reorderSent, daybookSent, daybookSkipped, daybookFailed, daybookRows: daybookRowsTotal };
 }
