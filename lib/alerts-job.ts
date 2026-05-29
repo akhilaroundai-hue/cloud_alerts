@@ -17,6 +17,7 @@ type OutstandingRow = {
   opening_balance: string | number | null;
   closing_balance: string | number | null;
   amount: string | number | null;
+  date: string | null;
   duedate: string | null;
   overdue_days: number | string | null;
   bill_type: string | null;
@@ -52,6 +53,22 @@ function norm(v: string | null | undefined): string {
 
 function isUuidLike(v: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
+}
+
+function dateValue(v: string | null | undefined): number | null {
+  if (!v) return null;
+  const t = new Date(`${v.slice(0, 10)}T00:00:00Z`).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+
+function overdueDays(row: OutstandingRow, today: string): number {
+  const effectiveDueDate = row.duedate || row.date;
+  const due = dateValue(effectiveDueDate);
+  const now = dateValue(today);
+  if (due !== null && now !== null) {
+    return Math.max(Math.floor((now - due) / 86_400_000), 0);
+  }
+  return Math.max(n(row.overdue_days), 0);
 }
 
 async function sbSelect<T>(table: string, params: Record<string, string>): Promise<T[]> {
@@ -192,13 +209,13 @@ export async function runAlertsJob(): Promise<{
     if (!companyGuid && !companyName) continue;
 
     let outstanding = await sbSelect<OutstandingRow>("outstanding", {
-      select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,duedate,overdue_days,bill_type",
+      select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
       company_id: `eq.${companyGuid}`,
       limit: "20000",
     });
     if (!outstanding.length && companyName) {
       const allRows = await sbSelect<OutstandingRow>("outstanding", {
-        select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,duedate,overdue_days,bill_type",
+        select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
         limit: "20000",
       });
       outstanding = allRows.filter((r) => norm(r.company_name) === norm(companyName));
@@ -207,12 +224,12 @@ export async function runAlertsJob(): Promise<{
     const overdueRows = outstanding.filter((r) => {
       const billType = norm(r.bill_type);
       if (billType === "payable" || billType === "purchase") return false;
-      const od = Math.max(n(r.overdue_days), 0);
+      const od = overdueDays(r, today);
       return od >= overdueDaysThreshold && n(r.closing_balance) > 0;
     });
     const overdueCustomers = new Set(overdueRows.map((r) => norm(r.customer_name)).filter(Boolean));
     const totalOverdue = overdueRows.reduce((acc, r) => acc + n(r.closing_balance), 0);
-    const maxOverdue = overdueRows.reduce((acc, r) => Math.max(acc, n(r.overdue_days)), 0);
+    const maxOverdue = overdueRows.reduce((acc, r) => Math.max(acc, overdueDays(r, today)), 0);
     const triggered = overdueCustomers.size >= overdueThreshold;
 
     await sbUpsert(
