@@ -14,6 +14,22 @@ function digits(v: string): string {
   return v.replace(/\D/g, "");
 }
 
+function ownerPhones(company: { owner_numbers?: Array<string | number> | null; owner_number?: string | number | null; owner_phone_number?: string | number | null }, fallback: string): string[] {
+  const phones = new Set<string>();
+  const add = (v: string | number | null | undefined) => {
+    const phone = digits(String(v ?? ""));
+    if (phone) phones.add(phone);
+  };
+
+  for (const phone of company.owner_numbers || []) add(phone);
+  add(company.owner_number);
+  add(company.owner_phone_number);
+  add(fallback);
+  add(process.env.INTERAKT_OWNER_PHONE || "");
+
+  return [...phones];
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -33,14 +49,14 @@ export async function POST(req: NextRequest) {
 
     // Resolve company owner from DB so multi-company owner confirmation goes to correct number.
     const companyQuery = new URL(`${supabaseUrl}/rest/v1/tally_companies`);
-    companyQuery.searchParams.set("select", "id,Guid,company_name,owner_number,owner_phone_number");
+    companyQuery.searchParams.set("select", "id,Guid,company_name,owner_number,owner_phone_number,owner_numbers");
     companyQuery.searchParams.set("id", `eq.${companyId}`);
     companyQuery.searchParams.set("limit", "1");
     const companyRes = await fetch(companyQuery.toString(), {
       headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` },
       cache: "no-store",
     });
-    const companyRows = companyRes.ok ? ((await companyRes.json()) as Array<{ Guid?: string; company_name?: string; owner_number?: string | number | null; owner_phone_number?: string | number | null }>) : [];
+    const companyRows = companyRes.ok ? ((await companyRes.json()) as Array<{ Guid?: string; company_name?: string; owner_number?: string | number | null; owner_phone_number?: string | number | null; owner_numbers?: Array<string | number> | null }>) : [];
     const company = companyRows[0];
     const companyGuid = String(company?.Guid || "");
     const companyName = String(company?.company_name || "").trim().toLowerCase();
@@ -58,12 +74,7 @@ export async function POST(req: NextRequest) {
     const countryCode = process.env.INTERAKT_COUNTRY_CODE || "+91";
     const templateName = process.env.INTERAKT_CUSTOMER_TEMPLATE_NAME || "customer_payment_remind";
     const senderName = process.env.INTERAKT_SENDER_NAME || "RoundTally";
-    const ownerPhoneRaw =
-      String(company?.owner_number || "") ||
-      String(company?.owner_phone_number || "") ||
-      accessToken ||
-      process.env.INTERAKT_OWNER_PHONE ||
-      "";
+    const ownerPhoneList = ownerPhones(company || {}, accessToken);
     const ownerTemplateName = process.env.INTERAKT_OWNER_CONFIRMATION_TEMPLATE_NAME || "reminder_confirmation";
 
     if (!interaktKey) {
@@ -146,10 +157,10 @@ export async function POST(req: NextRequest) {
 
     let owner_confirmation_sent = false;
     let owner_confirmation_response: unknown = null;
-    const ownerPhone = digits(ownerPhoneRaw);
 
-    if (sent > 0 && ownerPhone) {
-      const sendOwner = async (bodyValues?: string[]) => {
+    if (sent > 0 && ownerPhoneList.length > 0) {
+      const ownerResponses: Array<{ phone: string; ok: boolean; response: unknown }> = [];
+      const sendOwner = async (ownerPhone: string, bodyValues?: string[]) => {
         const ownerPayload = {
           countryCode,
           phoneNumber: ownerPhone,
@@ -177,18 +188,21 @@ export async function POST(req: NextRequest) {
         return { ownerRes, ownerBody };
       };
 
-      let { ownerRes, ownerBody } = await sendOwner([String(sent)]);
-      if (!ownerRes.ok) {
-        const txt = typeof ownerBody === "string" ? ownerBody : JSON.stringify(ownerBody);
-        if (txt.includes("expected number of params") || txt.includes("bodyValues")) {
-          const retry = await sendOwner();
-          ownerRes = retry.ownerRes;
-          ownerBody = retry.ownerBody;
+      for (const ownerPhone of ownerPhoneList) {
+        let { ownerRes, ownerBody } = await sendOwner(ownerPhone, [String(sent)]);
+        if (!ownerRes.ok) {
+          const txt = typeof ownerBody === "string" ? ownerBody : JSON.stringify(ownerBody);
+          if (txt.includes("expected number of params") || txt.includes("bodyValues")) {
+            const retry = await sendOwner(ownerPhone);
+            ownerRes = retry.ownerRes;
+            ownerBody = retry.ownerBody;
+          }
         }
+        ownerResponses.push({ phone: ownerPhone, ok: ownerRes.ok, response: ownerBody });
       }
 
-      owner_confirmation_response = ownerBody;
-      owner_confirmation_sent = ownerRes.ok;
+      owner_confirmation_response = ownerResponses;
+      owner_confirmation_sent = ownerResponses.some((r) => r.ok);
     }
 
     return NextResponse.json({

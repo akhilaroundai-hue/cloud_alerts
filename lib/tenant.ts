@@ -73,7 +73,7 @@ export async function resolveCompanyIdByAccessToken(accessToken: string): Promis
   }
 
   // Automatic fallback: if access_token wasn't populated for a new company yet,
-  // allow owner_number-based resolution (digits match).
+  // allow owner_number/owner_numbers-based resolution (digits match).
   for (const candidate of candidates) {
     const digits = digitsOnly(candidate);
     if (!digits) continue;
@@ -93,6 +93,32 @@ export async function resolveCompanyIdByAccessToken(accessToken: string): Promis
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`Company owner lookup failed: ${res.status} ${txt.slice(0, 300)}`);
+    }
+
+    const rows = (await res.json()) as Array<{ id?: string }>;
+    const id = rows?.[0]?.id;
+    if (id) return id;
+  }
+
+  for (const candidate of candidates) {
+    const digits = digitsOnly(candidate);
+    if (!digits) continue;
+    const query = new URL(`${url}/rest/v1/tally_companies`);
+    query.searchParams.set("select", "id");
+    query.searchParams.set("owner_numbers", `cs.{${digits}}`);
+    query.searchParams.set("limit", "1");
+
+    const res = await fetch(query.toString(), {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`Company owner_numbers lookup failed: ${res.status} ${txt.slice(0, 300)}`);
     }
 
     const rows = (await res.json()) as Array<{ id?: string }>;

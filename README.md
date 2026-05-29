@@ -10,6 +10,7 @@ Add required columns/index:
 ```sql
 alter table public.tally_companies add column if not exists access_token text;
 alter table public.tally_companies add column if not exists owner_phone_number text;
+alter table public.tally_companies add column if not exists owner_numbers text[] default '{}';
 create unique index if not exists tally_companies_access_token_key on public.tally_companies(access_token);
 ```
 
@@ -22,6 +23,13 @@ npm run dev
 Owner link format:
 - `http://localhost:3000/overdue?access=OWNER_PHONE_DIGITS`
 - Example: `http://localhost:3000/overdue?access=9526830843`
+
+For multiple owners, store all WhatsApp numbers in `owner_numbers`:
+```sql
+update public.tally_companies
+set owner_numbers = array['9876543210', '9123456789']
+where id = '<company-id>';
+```
 
 ## 4) Notes for new schema
 - Overdue page reads `outstanding.mobile_number` (not `customer_number`)

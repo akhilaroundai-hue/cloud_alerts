@@ -6,6 +6,7 @@ type CompanyRow = {
   company_name: string | null;
   owner_number: string | number | null;
   owner_phone_number: string | number | null;
+  owner_numbers: Array<string | number> | null;
   access_token: string | null;
   is_active: boolean | null;
 };
@@ -40,6 +41,21 @@ function env(name: string): string {
 
 function digits(v: string | number | null | undefined): string {
   return String(v ?? "").replace(/\D/g, "");
+}
+
+function ownerPhones(company: CompanyRow): string[] {
+  const phones = new Set<string>();
+  const add = (v: string | number | null | undefined) => {
+    const phone = digits(v);
+    if (phone) phones.add(phone);
+  };
+
+  for (const phone of company.owner_numbers || []) add(phone);
+  add(company.owner_number);
+  add(company.owner_phone_number);
+  add(process.env.INTERAKT_OWNER_PHONE || "");
+
+  return [...phones];
 }
 
 function n(v: string | number | null | undefined): number {
@@ -190,7 +206,7 @@ export async function runAlertsJob(): Promise<{
   const today = businessDate();
 
   const companies = await sbSelect<CompanyRow>("tally_companies", {
-    select: "id,Guid,company_name,owner_number,owner_phone_number,access_token,is_active",
+    select: "id,Guid,company_name,owner_number,owner_phone_number,owner_numbers,access_token,is_active",
     limit: "10000",
   });
 
@@ -294,9 +310,10 @@ export async function runAlertsJob(): Promise<{
     }
     if (creditLogs.length) await sbUpsert("credit_anomaly_logs", creditLogs, "snapshot_date,company_id,customer_name,anomaly_type");
 
-    const ownerPhone = digits(company.owner_number) || digits(company.owner_phone_number) || digits(process.env.INTERAKT_OWNER_PHONE || "");
-    const accessToken = digits(company.access_token) || ownerPhone;
-    if (!interaktEnabled || !ownerPhone) continue;
+    const phones = ownerPhones(company);
+    const primaryOwnerPhone = phones[0] || "";
+    const accessToken = String(company.access_token || "").trim() || primaryOwnerPhone;
+    if (!interaktEnabled || phones.length === 0) continue;
 
     if (daybookTemplate) {
       try {
@@ -316,17 +333,26 @@ export async function runAlertsJob(): Promise<{
         }).catch(() => []);
 
         if (daybookRows.length > 0 && existingLogs.length === 0) {
-          const resp = await sendInteraktTemplate(ownerPhone, daybookTemplate, [], buildDaybookLink(accessToken));
-          daybookSent += 1;
+          const responses: Array<{ phone: string; ok: boolean; response: unknown }> = [];
+          for (const ownerPhone of phones) {
+            try {
+              const resp = await sendInteraktTemplate(ownerPhone, daybookTemplate, [], buildDaybookLink(accessToken));
+              daybookSent += 1;
+              responses.push({ phone: ownerPhone, ok: true, response: resp });
+            } catch (e) {
+              daybookFailed += 1;
+              responses.push({ phone: ownerPhone, ok: false, response: { error: e instanceof Error ? e.message : "Unknown error" } });
+            }
+          }
           await sbInsert("daybook_alert_logs", [
             {
               snapshot_date: today,
               company_id: logCompanyId,
-              owner_phone_number: ownerPhone,
+              owner_phone_number: phones.join(","),
               transaction_count: daybookRows.length,
               total_amount: String(daybookAmount),
-              status: "sent",
-              response_json: resp,
+              status: responses.some((r) => r.ok) ? "sent" : "failed",
+              response_json: responses,
             },
           ]).catch(() => Promise.resolve());
         } else if (daybookRows.length > 0) {
@@ -335,7 +361,7 @@ export async function runAlertsJob(): Promise<{
             {
               snapshot_date: today,
               company_id: logCompanyId,
-              owner_phone_number: ownerPhone,
+              owner_phone_number: phones.join(","),
               transaction_count: daybookRows.length,
               total_amount: String(daybookAmount),
               status: "skipped",
@@ -351,7 +377,7 @@ export async function runAlertsJob(): Promise<{
           {
             snapshot_date: today,
             company_id: companyGuid || String(company.id || ""),
-            owner_phone_number: ownerPhone,
+            owner_phone_number: phones.join(","),
             transaction_count: 0,
             total_amount: "0",
             status: "failed",
@@ -364,30 +390,34 @@ export async function runAlertsJob(): Promise<{
     }
 
     if (triggered && overdueTemplate) {
-      try {
-        const resp = await sendInteraktTemplate(ownerPhone, overdueTemplate, [], buildOverdueLink(accessToken));
-        overdueSent += 1;
-        await sbInsert("overdue_alert_logs", [{ snapshot_date: today, status: "sent", owner_phone_number: ownerPhone, overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: resp }]);
-      } catch (e) {
-        await sbInsert("overdue_alert_logs", [{ snapshot_date: today, status: "failed", owner_phone_number: ownerPhone, overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: { error: e instanceof Error ? e.message : "Unknown error" } }]);
+      for (const ownerPhone of phones) {
+        try {
+          const resp = await sendInteraktTemplate(ownerPhone, overdueTemplate, [], buildOverdueLink(accessToken));
+          overdueSent += 1;
+          await sbInsert("overdue_alert_logs", [{ snapshot_date: today, status: "sent", owner_phone_number: ownerPhone, overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: resp }]);
+        } catch (e) {
+          await sbInsert("overdue_alert_logs", [{ snapshot_date: today, status: "failed", owner_phone_number: ownerPhone, overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: { error: e instanceof Error ? e.message : "Unknown error" } }]);
+        }
       }
     } else {
-      await sbInsert("overdue_alert_logs", [{ snapshot_date: today, status: "skipped", owner_phone_number: ownerPhone, overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: { reason: "threshold_not_met_or_template_missing" } }]);
+      await sbInsert("overdue_alert_logs", [{ snapshot_date: today, status: "skipped", owner_phone_number: phones.join(","), overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: { reason: "threshold_not_met_or_template_missing" } }]);
     }
 
     if (creditTemplate) {
       for (const item of pendingCreditAlerts) {
-        try {
-          const resp = await sendInteraktTemplate(
-            ownerPhone,
-            creditTemplate,
-            [item.customerName, String(item.used), String(item.limit)],
-            buildCreditLink(accessToken),
-          );
-          creditSent += 1;
-          await sbInsert("credit_alert_logs", [{ snapshot_date: today, company_id: companyGuid, customer_name: item.customerName, alert_key: `${item.used}|${item.limit}|${item.thresholdPercent}`, status: "sent", owner_phone_number: ownerPhone, response_json: resp }]);
-        } catch (e) {
-          await sbInsert("credit_alert_logs", [{ snapshot_date: today, company_id: companyGuid, customer_name: item.customerName, alert_key: `${item.used}|${item.limit}|${item.thresholdPercent}`, status: "failed", owner_phone_number: ownerPhone, response_json: { error: e instanceof Error ? e.message : "Unknown error" } }]);
+        for (const ownerPhone of phones) {
+          try {
+            const resp = await sendInteraktTemplate(
+              ownerPhone,
+              creditTemplate,
+              [item.customerName, String(item.used), String(item.limit)],
+              buildCreditLink(accessToken),
+            );
+            creditSent += 1;
+            await sbInsert("credit_alert_logs", [{ snapshot_date: today, company_id: companyGuid, customer_name: item.customerName, alert_key: `${item.used}|${item.limit}|${item.thresholdPercent}`, status: "sent", owner_phone_number: ownerPhone, response_json: resp }]);
+          } catch (e) {
+            await sbInsert("credit_alert_logs", [{ snapshot_date: today, company_id: companyGuid, customer_name: item.customerName, alert_key: `${item.used}|${item.limit}|${item.thresholdPercent}`, status: "failed", owner_phone_number: ownerPhone, response_json: { error: e instanceof Error ? e.message : "Unknown error" } }]);
+          }
         }
       }
     }
@@ -420,35 +450,37 @@ export async function runAlertsJob(): Promise<{
       });
 
       if (reorderTemplate && reorderItems.length > 0) {
-        try {
-          const resp = await sendInteraktTemplate(
-            ownerPhone,
-            reorderTemplate,
-            [String(reorderItems.length)],
-            buildReorderLink(accessToken),
-          );
-          reorderSent += 1;
-          await sbInsert("reorder_alert_logs", [
-            {
-              snapshot_date: today,
-              company_id: companyGuid,
-              owner_phone_number: ownerPhone,
-              item_count: reorderItems.length,
-              status: "sent",
-              response_json: resp,
-            },
-          ]).catch(() => Promise.resolve());
-        } catch (e) {
-          await sbInsert("reorder_alert_logs", [
-            {
-              snapshot_date: today,
-              company_id: companyGuid,
-              owner_phone_number: ownerPhone,
-              item_count: reorderItems.length,
-              status: "failed",
-              response_json: { error: e instanceof Error ? e.message : "Unknown error" },
-            },
-          ]).catch(() => Promise.resolve());
+        for (const ownerPhone of phones) {
+          try {
+            const resp = await sendInteraktTemplate(
+              ownerPhone,
+              reorderTemplate,
+              [String(reorderItems.length)],
+              buildReorderLink(accessToken),
+            );
+            reorderSent += 1;
+            await sbInsert("reorder_alert_logs", [
+              {
+                snapshot_date: today,
+                company_id: companyGuid,
+                owner_phone_number: ownerPhone,
+                item_count: reorderItems.length,
+                status: "sent",
+                response_json: resp,
+              },
+            ]).catch(() => Promise.resolve());
+          } catch (e) {
+            await sbInsert("reorder_alert_logs", [
+              {
+                snapshot_date: today,
+                company_id: companyGuid,
+                owner_phone_number: ownerPhone,
+                item_count: reorderItems.length,
+                status: "failed",
+                response_json: { error: e instanceof Error ? e.message : "Unknown error" },
+              },
+            ]).catch(() => Promise.resolve());
+          }
         }
       }
     } catch {
