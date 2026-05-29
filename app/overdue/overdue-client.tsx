@@ -27,6 +27,25 @@ function getPhoneDigits(value: string | number | null): string {
   return String(value).replace(/\D/g, "");
 }
 
+function parseDateString(dateStr: string | null): Date | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function getDateOnly(date: Date): string {
+  return date.toISOString().split('T')[0];
+}
+
+function getDaysFromToday(dateStr: string | null): number | null {
+  const date = parseDateString(dateStr);
+  if (!date) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  return Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export default function OverdueClient({ rows, accessToken }: { rows: Row[]; accessToken: string }) {
   const [selected, setSelected] = useState<Record<number, boolean>>({});
   const [sending, setSending] = useState(false);
@@ -38,6 +57,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
     visible: false,
   });
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<"duedate" | "amount" | "customer" | "overdue">("duedate");
 
   const grouped = useMemo(() => {
     const map = new Map<string, { key: string; customer: string; phone: string | number | null; indexes: number[]; total: number }>();
@@ -64,23 +84,90 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
     return Array.from(map.values());
   }, [rows]);
 
-  const filteredGroups = useMemo(() => {
+  const filteredAndSortedGroups = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return grouped;
-    return grouped.filter((g) => {
-      const customerMatch = g.customer.toLowerCase().includes(q);
-      const phoneMatch = String(g.phone || "").toLowerCase().includes(q);
-      const rowMatch = g.indexes.some((i) => {
-        const row = rows[i];
-        return (
-          (row.invoicenumber || "").toLowerCase().includes(q) ||
-          String(row.mobile_number || "").toLowerCase().includes(q) ||
-          (row.voucher_type || "").toLowerCase().includes(q)
-        );
+    let filtered = grouped;
+    
+    if (q) {
+      filtered = grouped.filter((g) => {
+        const customerMatch = g.customer.toLowerCase().includes(q);
+        const phoneMatch = String(g.phone || "").toLowerCase().includes(q);
+        const rowMatch = g.indexes.some((i) => {
+          const row = rows[i];
+          return (
+            (row.invoicenumber || "").toLowerCase().includes(q) ||
+            String(row.mobile_number || "").toLowerCase().includes(q) ||
+            (row.voucher_type || "").toLowerCase().includes(q)
+          );
+        });
+        return customerMatch || phoneMatch || rowMatch;
       });
-      return customerMatch || phoneMatch || rowMatch;
+    }
+
+    // Filter for overdue only if selected
+    if (sortBy === "overdue") {
+      filtered = filtered.filter((g) => {
+        return g.indexes.some((idx) => {
+          const daysFromToday = getDaysFromToday(rows[idx].duedate || rows[idx].date);
+          return daysFromToday !== null && daysFromToday < 0;
+        });
+      });
+    }
+
+    // Sort groups based on selected sort option
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortBy === "duedate" || sortBy === "overdue") {
+        // Get earliest due date for each group
+        const getEarliestDueDate = (group: typeof a) => {
+          let earliest: Date | null = null;
+          group.indexes.forEach((idx) => {
+            const dueDate = parseDateString(rows[idx].duedate || rows[idx].date);
+            if (dueDate && (!earliest || dueDate < earliest)) {
+              earliest = dueDate;
+            }
+          });
+          return earliest;
+        };
+        
+        const aDate = getEarliestDueDate(a);
+        const bDate = getEarliestDueDate(b);
+        
+        if (!aDate && !bDate) return 0;
+        if (!aDate) return 1;
+        if (!bDate) return -1;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const aDays = Math.floor(((aDate as Date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const bDays = Math.floor(((bDate as Date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Priority order: today (0), tomorrow (1), upcoming (>1), overdue (<0)
+        const getPriority = (days: number) => {
+          if (days === 0) return 0; // Today - highest priority
+          if (days === 1) return 1; // Tomorrow
+          if (days > 1) return 2;   // Upcoming
+          return 3;                 // Overdue - lowest priority
+        };
+        
+        const aPriority = getPriority(aDays);
+        const bPriority = getPriority(bDays);
+        
+        if (aPriority !== bPriority) {
+          return aPriority - bPriority;
+        }
+        
+        // Within same priority, sort by actual date
+        return (aDate as Date).getTime() - (bDate as Date).getTime();
+      } else if (sortBy === "amount") {
+        return b.total - a.total;
+      } else {
+        return a.customer.localeCompare(b.customer);
+      }
     });
-  }, [grouped, rows, search]);
+
+    return sorted;
+  }, [grouped, rows, search, sortBy]);
 
   const rowsWithPhoneCount = useMemo(() => rows.filter((r) => getPhoneDigits(r.mobile_number).length > 0).length, [rows]);
   const selectedIndexes = useMemo(() => Object.entries(selected).filter(([, v]) => v).map(([k]) => Number(k)), [selected]);
@@ -103,7 +190,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
 
   function toggleAll(checked: boolean) {
     const next: Record<number, boolean> = {};
-    filteredGroups.forEach((group) => {
+    filteredAndSortedGroups.forEach((group) => {
       group.indexes.forEach((i) => {
         if (!sentRows[i]) next[i] = checked;
       });
@@ -185,7 +272,17 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
           disabled={sending}
           style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px solid #cfd8cf", fontSize: 13, marginBottom: 6 }}
         />
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <select 
+            value={sortBy} 
+            onChange={(e) => setSortBy(e.target.value as "duedate" | "amount" | "customer" | "overdue")}
+            style={{ fontSize: 12, padding: "5px 8px", minHeight: 32, borderRadius: 6, border: "1px solid #cfd8cf" }}
+          >
+            <option value="duedate">Sort: Due Date</option>
+            <option value="overdue">Overdue Only</option>
+            <option value="amount">Sort: Amount</option>
+            <option value="customer">Sort: Customer</option>
+          </select>
           <button onClick={() => toggleAll(true)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Select all</button>
           <button onClick={() => toggleAll(false)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Clear</button>
           <button onClick={sendSelected} disabled={sending || selectedIndexes.length === 0} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>
@@ -195,7 +292,19 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
       </div>
 
       <div>
-        {filteredGroups.map((group) => {
+        {filteredAndSortedGroups.map((group) => {
+          // Calculate earliest due date for badge display
+          let earliestDueDate: Date | null = null;
+          let daysFromToday: number | null = null;
+          group.indexes.forEach((idx) => {
+            const dueDate = parseDateString(rows[idx].duedate || rows[idx].date);
+            if (dueDate && (!earliestDueDate || dueDate < earliestDueDate)) {
+              earliestDueDate = dueDate;
+            }
+          });
+          if (earliestDueDate) {
+            daysFromToday = getDaysFromToday((earliestDueDate as Date).toISOString());
+          }
           const open = !!expanded[group.key];
           const pendingIndexes = group.indexes.filter((i) => !sentRows[i]);
           const selectedInGroup = group.indexes.filter((i) => !!selected[i]).length;
@@ -203,7 +312,21 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
             <div className="card" key={group.key} style={{ marginBottom: 8, padding: "10px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, marginBottom: 3 }}>{group.customer}</h3>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, marginBottom: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    {group.customer}
+                    {daysFromToday !== null && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        padding: "2px 6px",
+                        borderRadius: 999,
+                        background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fee" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff",
+                        color: daysFromToday < 0 ? "#991b1b" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3"
+                      }}>
+                        {daysFromToday < 0 ? "OVERDUE" : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
+                      </span>
+                    )}
+                  </h3>
                   <p style={{ fontSize: 12, lineHeight: 1.4, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", margin: 0 }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
