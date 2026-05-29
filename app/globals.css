@@ -129,8 +129,14 @@ input[type="text"] {
 }
 
 @media (max-width: 640px) {
+  main {
+    margin: 10px auto;
+    padding: 0 8px 16px;
+  }
+
   h1 {
     font-size: 20px;
+    margin-bottom: 4px;
   }
 
   p {
@@ -140,6 +146,8 @@ input[type="text"] {
 
   .card {
     padding: 8px;
+    border-radius: 10px;
+    margin-bottom: 6px;
   }
 
   .desktop-table {
@@ -162,6 +170,12 @@ input[type="text"] {
   input[type="checkbox"] {
     width: 16px;
     height: 16px;
+  }
+
+  .mobile-grid {
+    grid-template-columns: 100px 1fr;
+    gap: 3px 8px;
+    font-size: 12px;
   }
 }
 

@@ -173,27 +173,25 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
 
   return (
     <>
-      <div className="card" style={{ marginBottom: 12 }}>
-        <p>
+      <div className="card" style={{ marginBottom: 8, padding: "10px" }}>
+        <p style={{ fontSize: 13, marginBottom: 6 }}>
           Rows with customer number: {rowsWithPhoneCount} | Selected bills: {selectedIndexes.length}
         </p>
-        <p style={{ marginTop: 8, marginBottom: 8 }}>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search customer / ref no / phone / voucher type"
-            disabled={sending}
-            style={{ width: "100%", maxWidth: 460, padding: "8px 10px", borderRadius: 8, border: "1px solid #cfd8cf" }}
-          />
-        </p>
-        <p style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={() => toggleAll(true)} disabled={sending}>Select all shown bills</button>
-          <button onClick={() => toggleAll(false)} disabled={sending}>Clear</button>
-          <button onClick={sendSelected} disabled={sending || selectedIndexes.length === 0}>
-            {sending ? "Sending..." : "Send Selected Bills"}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search customer / ref no / phone / voucher type"
+          disabled={sending}
+          style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px solid #cfd8cf", fontSize: 13, marginBottom: 6 }}
+        />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button onClick={() => toggleAll(true)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Select all</button>
+          <button onClick={() => toggleAll(false)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Clear</button>
+          <button onClick={sendSelected} disabled={sending || selectedIndexes.length === 0} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>
+            {sending ? "Sending..." : "Send Selected"}
           </button>
-        </p>
+        </div>
       </div>
 
       <div>
@@ -202,35 +200,58 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
           const pendingIndexes = group.indexes.filter((i) => !sentRows[i]);
           const selectedInGroup = group.indexes.filter((i) => !!selected[i]).length;
           return (
-            <div className="card" key={group.key} style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 18 }}>{group.customer}</h3>
-                  <p style={{ marginTop: 4 }}>
-                    Phone: {group.phone || "-"} | Bills: {group.indexes.length} |{" "}
+            <div className="card" key={group.key} style={{ marginBottom: 8, padding: "10px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, marginBottom: 3 }}>{group.customer}</h3>
+                  <p style={{ fontSize: 12, lineHeight: 1.4, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", margin: 0 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+                      </svg>
+                      {group.phone || "-"}
+                    </span>
+                    <span>• Bills: {group.indexes.length}</span>
                     <span
                       style={{
                         color: selectedInGroup > 0 ? "#0f8a5f" : "#6f7a70",
-                        fontWeight: 700,
+                        fontWeight: 600,
                         background: selectedInGroup > 0 ? "#e7f8ef" : "#edf0ed",
                         borderRadius: 999,
-                        padding: "2px 8px",
+                        padding: "1px 6px",
+                        fontSize: 11,
                       }}
                     >
-                      Selected: {selectedInGroup}
-                    </span>{" "}
-                    | Total: Rs {formatNum(group.total)}
+                      Sel: {selectedInGroup}
+                    </span>
+                    <span>• Rs {formatNum(group.total)}</span>
                   </p>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => setExpanded((prev) => ({ ...prev, [group.key]: !open }))}>
-                    {open ? "Hide Bills" : "View Bills"}
-                  </button>
-                </div>
+                <button 
+                  onClick={() => setExpanded((prev) => ({ ...prev, [group.key]: !open }))} 
+                  style={{ 
+                    minHeight: 32, 
+                    width: 32, 
+                    padding: 0, 
+                    display: "flex", 
+                    alignItems: "center", 
+                    justifyContent: "center",
+                    flexShrink: 0
+                  }}
+                  title={open ? "Hide Bills" : "View Bills"}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {open ? (
+                      <polyline points="18 15 12 9 6 15"></polyline>
+                    ) : (
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    )}
+                  </svg>
+                </button>
               </div>
 
               {open ? (
-                <div style={{ marginTop: 10 }}>
+                <div style={{ marginTop: 8 }}>
                   {group.indexes.map((idx) => {
                     const r = rows[idx];
                     const isSent = !!sentRows[idx];
@@ -240,14 +261,14 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                         key={`${r.invoicenumber}-${idx}`}
                         style={{
                           border: "1px solid #d8dfd8",
-                          borderRadius: 10,
-                          padding: 10,
-                          marginBottom: 8,
+                          borderRadius: 8,
+                          padding: 8,
+                          marginBottom: 6,
                           background: isSent ? "#edf2ed" : "#fff",
                         }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 13 }}>
                             <input
                               type="checkbox"
                               checked={!!selected[idx]}
@@ -256,11 +277,11 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                             />
                             Ref: {r.invoicenumber || "-"}
                           </label>
-                          <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])}>
-                            {isSent ? "Already Sent" : hasPhone ? "Send This Bill" : "No Phone"}
+                          <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "4px 8px", minHeight: 28 }}>
+                            {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
                           </button>
                         </div>
-                        <div className="mobile-grid" style={{ marginTop: 8 }}>
+                        <div className="mobile-grid" style={{ marginTop: 6, fontSize: 12 }}>
                           <span>Voucher</span><span>{r.voucher_type || "-"}</span>
                           <span>Bill Date</span><span>{r.date || "-"}</span>
                           <span>Due Date</span><span>{r.duedate || "-"}</span>
