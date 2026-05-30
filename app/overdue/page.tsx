@@ -26,7 +26,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 
-  const headers = { apikey: key, Authorization: `Bearer ${key}` };
+  const headers: Record<string, string> = { apikey: key, Authorization: `Bearer ${key}`, Range: `0-${limit - 1}`, Prefer: "count=exact" };
   const baseFields = "company_id,customer_name,invoicenumber,date,duedate,overdue_days,amount,closing_balance";
   const attempts = [
     `${baseFields},mobile_number`,
@@ -79,7 +79,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
     query.searchParams.set("bill_type", "eq.receivable");
     query.searchParams.set("order", "customer_name.asc,duedate.asc");
     query.searchParams.set("limit", "20000");
-    const res = await fetch(query.toString(), { headers, cache: "no-store" });
+    const res = await fetch(query.toString(), { headers: { ...headers, Range: "0-19999" }, cache: "no-store" });
     if (!res.ok) continue;
     const rawRows = (await res.json()) as Array<Record<string, string | number | null>>;
     const filtered = rawRows.filter((r) => String(r.company_name || "").trim().toLowerCase() === companyName);
