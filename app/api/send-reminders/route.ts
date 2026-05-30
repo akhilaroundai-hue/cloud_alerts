@@ -84,12 +84,24 @@ export async function POST(req: NextRequest) {
     let sent = 0;
     let failed = 0;
     const results: Array<{ phone: string; ok: boolean; response: unknown }> = [];
+    const reminderLogs: Array<Record<string, unknown>> = [];
 
     for (const row of rows) {
       const phone = digits(String(row.mobile_number || ""));
       if (!phone) {
         failed += 1;
         results.push({ phone: "", ok: false, response: "Missing mobile_number" });
+        reminderLogs.push({
+          company_id: companyGuid || companyId,
+          customer_name: row.customer_name || null,
+          phone_number: null,
+          invoice_number: row.invoicenumber || null,
+          amount: row.closing_balance || "0",
+          status: "failed",
+          error_reason: "Missing mobile_number",
+          response_json: null,
+          sent_at: new Date().toISOString(),
+        });
         continue;
       }
 
@@ -149,9 +161,31 @@ export async function POST(req: NextRequest) {
       if (res.ok) {
         sent += 1;
         results.push({ phone, ok: true, response: j });
+        reminderLogs.push({
+          company_id: companyGuid || companyId,
+          customer_name: row.customer_name || null,
+          phone_number: phone,
+          invoice_number: row.invoicenumber || null,
+          amount: row.closing_balance || "0",
+          status: "sent",
+          error_reason: null,
+          response_json: j,
+          sent_at: new Date().toISOString(),
+        });
       } else {
         failed += 1;
         results.push({ phone, ok: false, response: j });
+        reminderLogs.push({
+          company_id: companyGuid || companyId,
+          customer_name: row.customer_name || null,
+          phone_number: phone,
+          invoice_number: row.invoicenumber || null,
+          amount: row.closing_balance || "0",
+          status: "failed",
+          error_reason: typeof j === "string" ? j : JSON.stringify(j),
+          response_json: j,
+          sent_at: new Date().toISOString(),
+        });
       }
     }
 
@@ -203,6 +237,25 @@ export async function POST(req: NextRequest) {
 
       owner_confirmation_response = ownerResponses;
       owner_confirmation_sent = ownerResponses.some((r) => r.ok);
+    }
+
+    // Save reminder logs to Supabase
+    if (reminderLogs.length > 0) {
+      try {
+        await fetch(`${supabaseUrl}/rest/v1/reminder_logs`, {
+          method: "POST",
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            "Content-Type": "application/json",
+            Prefer: "return=minimal",
+          },
+          body: JSON.stringify(reminderLogs),
+          cache: "no-store",
+        });
+      } catch {
+        // Don't fail the response if logging fails
+      }
     }
 
     return NextResponse.json({
