@@ -18,11 +18,9 @@ export async function POST(req: NextRequest) {
     if (!isAuthorized(req)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    
     const result = await runAlertsJob();
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
-    console.error("Alerts job error:", e);
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Unknown error" }, { status: 500 });
   }
 }

@@ -1,7 +1,8 @@
 {
-  "functions": {
-    "app/api/jobs/scan-alerts/route.ts": {
-      "maxDuration": 60
+  "crons": [
+    {
+      "path": "/api/jobs/scan-alerts",
+      "schedule": "0 3 * * *"
     }
-  }
+  ]
 }

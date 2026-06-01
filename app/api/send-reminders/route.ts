@@ -25,6 +25,7 @@ function ownerPhones(company: { owner_numbers?: Array<string | number> | null; o
   add(company.owner_number);
   add(company.owner_phone_number);
   add(fallback);
+  add(process.env.INTERAKT_OWNER_PHONE || "");
 
   return [...phones];
 }
