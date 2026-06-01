@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/jobs/scan-alerts",
-      "schedule": "0 3 * * *"
-    }
-  ]
-}
