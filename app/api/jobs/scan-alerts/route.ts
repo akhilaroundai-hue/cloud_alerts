@@ -19,14 +19,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     
-    // Start the job in the background without waiting
-    runAlertsJob().catch((e) => {
-      console.error("Alerts job failed:", e instanceof Error ? e.message : "Unknown error");
-    });
-    
-    // Return immediately to prevent timeout
-    return NextResponse.json({ ok: true, status: "started", message: "Alerts job started in background" });
+    const result = await runAlertsJob();
+    return NextResponse.json({ ok: true, ...result });
   } catch (e) {
+    console.error("Alerts job error:", e);
     return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Unknown error" }, { status: 500 });
   }
 }
