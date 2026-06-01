@@ -305,14 +305,36 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
           if (earliestDueDate) {
             daysFromToday = getDaysFromToday((earliestDueDate as Date).toISOString());
           }
+          const isGroupOverdue = daysFromToday !== null && daysFromToday < 0;
           const open = !!expanded[group.key];
           const pendingIndexes = group.indexes.filter((i) => !sentRows[i]);
           const selectedInGroup = group.indexes.filter((i) => !!selected[i]).length;
           return (
-            <div className="card" key={group.key} style={{ marginBottom: 8, padding: "10px" }}>
+            <div
+              className="card"
+              key={group.key}
+              style={{
+                marginBottom: 8,
+                padding: "10px",
+                background: isGroupOverdue ? "#fff5f5" : undefined,
+                border: isGroupOverdue ? "1px solid #fca5a5" : undefined,
+              }}
+            >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, marginBottom: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <h3
+                    style={{
+                      margin: 0,
+                      fontSize: 15,
+                      fontWeight: 600,
+                      marginBottom: 3,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      flexWrap: "wrap",
+                      color: isGroupOverdue ? "#b91c1c" : undefined,
+                    }}
+                  >
                     {group.customer}
                     {daysFromToday !== null && (
                       <span style={{
