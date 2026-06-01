@@ -53,7 +53,6 @@ function ownerPhones(company: CompanyRow): string[] {
   for (const phone of company.owner_numbers || []) add(phone);
   add(company.owner_number);
   add(company.owner_phone_number);
-  add(process.env.INTERAKT_OWNER_PHONE || "");
 
   return [...phones];
 }
