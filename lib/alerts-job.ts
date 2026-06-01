@@ -204,10 +204,14 @@ export async function runAlertsJob(): Promise<{
   const interaktEnabled = String(process.env.INTERAKT_ENABLED || "false").toLowerCase() === "true";
   const today = businessDate();
 
+  console.log("🚀 Alerts job started", { interaktEnabled, today });
+
   const companies = await sbSelect<CompanyRow>("tally_companies", {
     select: "id,Guid,company_name,owner_number,owner_phone_number,owner_numbers,access_token,is_active",
     limit: "10000",
   });
+
+  console.log(`📊 Found ${companies.length} companies`);
 
   let overdueSent = 0;
   let creditSent = 0;
@@ -312,7 +316,17 @@ export async function runAlertsJob(): Promise<{
     const phones = ownerPhones(company);
     const primaryOwnerPhone = phones[0] || "";
     const accessToken = String(company.access_token || "").trim() || primaryOwnerPhone;
-    if (!interaktEnabled || phones.length === 0) continue;
+    
+    if (!interaktEnabled) {
+      console.log(`⏭️  Skipping ${companyName}: INTERAKT_ENABLED=false`);
+      continue;
+    }
+    if (phones.length === 0) {
+      console.log(`⏭️  Skipping ${companyName}: No phone numbers`);
+      continue;
+    }
+    
+    console.log(`✅ Processing ${companyName} with phones:`, phones);
 
     if (daybookTemplate) {
       try {
