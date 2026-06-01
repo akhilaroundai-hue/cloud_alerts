@@ -1,1 +1,7 @@
-{}
+{
+  "functions": {
+    "app/api/jobs/scan-alerts/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}
