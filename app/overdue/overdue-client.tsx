@@ -422,15 +422,16 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                           <span>Voucher</span><span>{r.voucher_type || "-"}</span>
                           <span>Bill Date</span><span>{r.date || "-"}</span>
                           <span>Due Date</span><span>{r.duedate || "-"}</span>
-                          <span>Overdue Days</span><span>{(() => {
+                          {(() => {
                             const dueDate = parseDateString(r.duedate || r.date);
-                            if (!dueDate) return 0;
+                            if (!dueDate) return null;
                             const today = new Date();
                             today.setHours(0, 0, 0, 0);
                             dueDate.setHours(0, 0, 0, 0);
                             const days = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
-                            return Math.max(days, 0);
-                          })()}</span>
+                            if (days <= 0) return null;
+                            return <><span>Overdue Days</span><span>{days}</span></>;
+                          })()}
                           <span>Pending</span><span>Rs {formatNum(r.opening_balance)}</span>
                           <span>Opening</span><span>Rs {formatNum(r.closing_balance)}</span>
                         </div>
