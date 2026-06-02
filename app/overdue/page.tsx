@@ -28,10 +28,12 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 
   const headers: Record<string, string> = { apikey: key, Authorization: `Bearer ${key}`, Range: `0-${limit - 1}`, Prefer: "count=exact" };
-  const baseFields = "company_id,customer_name,invoicenumber,date,duedate,overdue_days,amount,closing_balance,opening_amount";
+  const baseCore = "company_id,customer_name,invoicenumber,date,duedate,overdue_days,amount,closing_balance";
   const attempts = [
-    `${baseFields},mobile_number`,
-    `${baseFields},customer_number`,
+    `${baseCore},opening_amount,mobile_number`,
+    `${baseCore},opening_amount,customer_number`,
+    `${baseCore},mobile_number`,
+    `${baseCore},customer_number`,
   ];
 
   let rowsById: Outstanding[] = [];
@@ -58,7 +60,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
       overdue_days: (r.overdue_days as number | null) ?? null,
       amount: String(r.amount ?? "0"),
       closing_balance: String(r.closing_balance ?? "0"),
-      opening_amount: String(r.opening_amount ?? "0"),
+      opening_amount: String((r.opening_amount ?? r.closing_balance ?? r.amount) ?? "0"),
       voucher_type: null,
     }));
     if (rowsById.length > 0) return rowsById;
@@ -95,7 +97,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
       overdue_days: (r.overdue_days as number | null) ?? null,
       amount: String(r.amount ?? "0"),
       closing_balance: String(r.closing_balance ?? "0"),
-      opening_amount: String(r.opening_amount ?? "0"),
+      opening_amount: String((r.opening_amount ?? r.closing_balance ?? r.amount) ?? "0"),
       voucher_type: null,
     }));
   }
