@@ -12,7 +12,6 @@ type Row = {
   overdue_days: number | null;
   amount: string;
   closing_balance: string;
-  opening_amount: string;
   voucher_type: string | null;
 };
 
@@ -65,7 +64,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
     rows.forEach((row, index) => {
       const key = (row.customer_name || "unknown").trim().toLowerCase();
       const existing = map.get(key);
-      const amount = Number(row.opening_amount || 0);
+      const amount = Number(row.closing_balance || 0);
       if (!existing) {
         map.set(key, {
           key,
