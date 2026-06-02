@@ -10,6 +10,7 @@ type Outstanding = {
   duedate: string | null;
   overdue_days: number | null;
   amount: string;
+  opening_balance: string;
   closing_balance: string;
   voucher_type: string | null;
 };
@@ -27,7 +28,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
 
   const headers: Record<string, string> = { apikey: key, Authorization: `Bearer ${key}`, Range: `0-${limit - 1}`, Prefer: "count=exact" };
-  const baseFields = "company_id,customer_name,invoicenumber,date,duedate,overdue_days,amount,closing_balance";
+  const baseFields = "company_id,customer_name,invoicenumber,date,duedate,overdue_days,amount,opening_balance,closing_balance";
   const attempts = [
     `${baseFields},mobile_number`,
     `${baseFields},customer_number`,
@@ -56,6 +57,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
       duedate: ((r.duedate || r.date) as string | null) ?? null,
       overdue_days: (r.overdue_days as number | null) ?? null,
       amount: String(r.amount ?? "0"),
+      opening_balance: String(r.opening_balance ?? "0"),
       closing_balance: String(r.closing_balance ?? "0"),
       voucher_type: null,
     }));
@@ -92,6 +94,7 @@ async function getOverdueRows(limit: number, companyId: string): Promise<Outstan
       duedate: ((r.duedate || r.date) as string | null) ?? null,
       overdue_days: (r.overdue_days as number | null) ?? null,
       amount: String(r.amount ?? "0"),
+      opening_balance: String(r.opening_balance ?? "0"),
       closing_balance: String(r.closing_balance ?? "0"),
       voucher_type: null,
     }));
@@ -117,7 +120,7 @@ export default async function OverduePage({ searchParams }: { searchParams: { li
 
     const limit = Math.min(Math.max(Number(searchParams.limit || 5000), 1), 20000);
     const rows = await getOverdueRows(limit, companyId);
-    const total = rows.reduce((acc, r) => acc + Number(r.closing_balance || 0), 0);
+    const total = rows.reduce((acc, r) => acc + Number(r.opening_balance || 0), 0);
 
     return (
       <main>
