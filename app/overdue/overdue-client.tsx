@@ -58,7 +58,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
     visible: false,
   });
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"duedate" | "amount" | "customer" | "overdue">("duedate");
+  const [sortBy, setSortBy] = useState<"duedate" | "amount" | "customer" | "overdue" | "recent">("duedate");
 
   const grouped = useMemo(() => {
     const map = new Map<string, { key: string; customer: string; phone: string | number | null; indexes: number[]; total: number }>();
@@ -162,6 +162,24 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
         return (aDate as Date).getTime() - (bDate as Date).getTime();
       } else if (sortBy === "amount") {
         return b.total - a.total;
+      } else if (sortBy === "recent") {
+        // Get most recent bill_date for each group
+        const getMostRecentBillDate = (group: typeof a) => {
+          let latest: Date | null = null;
+          group.indexes.forEach((idx) => {
+            const billDate = parseDateString(rows[idx].date);
+            if (billDate && (!latest || billDate > latest)) {
+              latest = billDate;
+            }
+          });
+          return latest;
+        };
+        const aDate = getMostRecentBillDate(a);
+        const bDate = getMostRecentBillDate(b);
+        if (!aDate && !bDate) return 0;
+        if (!aDate) return 1;
+        if (!bDate) return -1;
+        return (bDate as Date).getTime() - (aDate as Date).getTime();
       } else {
         return a.customer.localeCompare(b.customer);
       }
@@ -276,13 +294,14 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <select 
             value={sortBy} 
-            onChange={(e) => setSortBy(e.target.value as "duedate" | "amount" | "customer" | "overdue")}
+            onChange={(e) => setSortBy(e.target.value as "duedate" | "amount" | "customer" | "overdue" | "recent")}
             style={{ fontSize: 12, padding: "5px 8px", minHeight: 32, borderRadius: 6, border: "1px solid #cfd8cf" }}
           >
             <option value="duedate">Sort: Due Date</option>
             <option value="overdue">Overdue Only</option>
             <option value="amount">Sort: Amount</option>
             <option value="customer">Sort: Customer</option>
+            <option value="recent">Sort: Recent</option>
           </select>
           <button onClick={() => toggleAll(true)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Select all</button>
           <button onClick={() => toggleAll(false)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Clear</button>
