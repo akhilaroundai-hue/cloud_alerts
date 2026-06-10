@@ -52,13 +52,14 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
   const [sending, setSending] = useState(false);
   const [sentRows, setSentRows] = useState<Record<number, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [viewMode, setViewMode] = useState<"customer" | "bill">("customer");
   const [snackbar, setSnackbar] = useState<{ text: string; type: "success" | "error"; visible: boolean }>({
     text: "",
     type: "success",
     visible: false,
   });
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState<"duedate" | "amount" | "customer" | "overdue" | "recent">("duedate");
+  const [sortBy, setSortBy] = useState<"duedate" | "amount" | "customer" | "overdue" | "recent">("recent");
 
   const grouped = useMemo(() => {
     const map = new Map<string, { key: string; customer: string; phone: string | number | null; indexes: number[]; total: number }>();
@@ -277,6 +278,52 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
     await sendRows(selectedIndexes);
   }
 
+  const filteredBillRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let result = rows.map((row, idx) => ({ row, idx }));
+    if (q) {
+      result = result.filter(({ row }) =>
+        (row.customer_name || "").toLowerCase().includes(q) ||
+        (row.invoicenumber || "").toLowerCase().includes(q) ||
+        String(row.mobile_number || "").toLowerCase().includes(q) ||
+        (row.voucher_type || "").toLowerCase().includes(q)
+      );
+    }
+    if (sortBy === "overdue") {
+      result = result.filter(({ row }) => {
+        const d = getDaysFromToday(row.duedate || row.date);
+        return d !== null && d < 0;
+      });
+    }
+    result.sort((a, b) => {
+      if (sortBy === "duedate" || sortBy === "overdue") {
+        const aDate = parseDateString(a.row.duedate || a.row.date);
+        const bDate = parseDateString(b.row.duedate || b.row.date);
+        if (!aDate && !bDate) return 0;
+        if (!aDate) return 1;
+        if (!bDate) return -1;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const aDays = Math.floor((aDate.getTime() - today.getTime()) / 86400000);
+        const bDays = Math.floor((bDate.getTime() - today.getTime()) / 86400000);
+        const getPriority = (d: number) => d === 0 ? 0 : d === 1 ? 1 : d > 1 ? 2 : 3;
+        const diff = getPriority(aDays) - getPriority(bDays);
+        return diff !== 0 ? diff : aDate.getTime() - bDate.getTime();
+      } else if (sortBy === "amount") {
+        return Number(b.row.opening_balance || 0) - Number(a.row.opening_balance || 0);
+      } else if (sortBy === "recent") {
+        const aDate = parseDateString(a.row.date);
+        const bDate = parseDateString(b.row.date);
+        if (!aDate && !bDate) return 0;
+        if (!aDate) return 1;
+        if (!bDate) return -1;
+        return bDate.getTime() - aDate.getTime();
+      } else {
+        return (a.row.customer_name || "").localeCompare(b.row.customer_name || "");
+      }
+    });
+    return result;
+  }, [rows, search, sortBy]);
+
   return (
     <>
       <div className="card" style={{ marginBottom: 8, padding: "10px" }}>
@@ -291,6 +338,40 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
           disabled={sending}
           style={{ width: "100%", padding: "6px 10px", borderRadius: 8, border: "1px solid #cfd8cf", fontSize: 13, marginBottom: 6 }}
         />
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <button
+            onClick={() => setViewMode("customer")}
+            style={{
+              fontSize: 13,
+              padding: "6px 16px",
+              minHeight: 34,
+              borderRadius: 8,
+              border: viewMode === "customer" ? "2px solid #2563eb" : "1px solid #cfd8cf",
+              background: viewMode === "customer" ? "#eff6ff" : "#fff",
+              color: viewMode === "customer" ? "#2563eb" : "#374151",
+              fontWeight: viewMode === "customer" ? 700 : 400,
+              cursor: "pointer",
+            }}
+          >
+            Customer View
+          </button>
+          <button
+            onClick={() => setViewMode("bill")}
+            style={{
+              fontSize: 13,
+              padding: "6px 16px",
+              minHeight: 34,
+              borderRadius: 8,
+              border: viewMode === "bill" ? "2px solid #2563eb" : "1px solid #cfd8cf",
+              background: viewMode === "bill" ? "#eff6ff" : "#fff",
+              color: viewMode === "bill" ? "#2563eb" : "#374151",
+              fontWeight: viewMode === "bill" ? 700 : 400,
+              cursor: "pointer",
+            }}
+          >
+            Bill View
+          </button>
+        </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <select 
             value={sortBy} 
@@ -311,6 +392,66 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
         </div>
       </div>
 
+      {viewMode === "bill" ? (
+        <div>
+          {filteredBillRows.map(({ row: r, idx }) => {
+            const isSent = !!sentRows[idx];
+            const hasPhone = getPhoneDigits(r.mobile_number || fallbackPhoneByIndex[idx]).length > 0;
+            const daysFromToday = getDaysFromToday(r.duedate || r.date);
+            const isOverdue = daysFromToday !== null && daysFromToday < 0;
+            return (
+              <div className="card" key={`bill-${r.invoicenumber}-${idx}`} style={{ marginBottom: 8, padding: "10px", background: isSent ? "#edf2ed" : "#fff" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, marginBottom: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: isOverdue ? "#ca8a04" : undefined }}>
+                      {r.customer_name || "Unknown"}
+                      {daysFromToday !== null && (
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 999, background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fee" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff", color: daysFromToday < 0 ? "#991b1b" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3" }}>
+                          {daysFromToday < 0 ? `${Math.abs(daysFromToday)}d overdue` : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
+                        </span>
+                      )}
+                    </h3>
+                    <p style={{ fontSize: 12, margin: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        {r.mobile_number || fallbackPhoneByIndex[idx] || "-"}
+                      </span>
+                      <span>• Ref: {r.invoicenumber || "-"}</span>
+                      <span>• Rs {formatNum(r.opening_balance)}</span>
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                    <input
+                      type="checkbox"
+                      checked={!!selected[idx]}
+                      disabled={sending || isSent}
+                      onChange={(e) => setSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
+                    />
+                    <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "4px 8px", minHeight: 28 }}>
+                      {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
+                    </button>
+                  </div>
+                </div>
+                <div className="mobile-grid" style={{ marginTop: 6, fontSize: 12 }}>
+                  <span>Voucher</span><span>{r.voucher_type || "-"}</span>
+                  <span>Bill Date</span><span>{r.date || "-"}</span>
+                  <span>Due Date</span><span>{r.duedate || "-"}</span>
+                  {(() => {
+                    const dueDate = parseDateString(r.duedate || r.date);
+                    if (!dueDate) return null;
+                    const today = new Date(); today.setHours(0,0,0,0); dueDate.setHours(0,0,0,0);
+                    const days = Math.floor((today.getTime() - dueDate.getTime()) / 86400000);
+                    if (days <= 0) return null;
+                    return <><span>Overdue Days</span><span>{days}</span></>;
+                  })()}
+                  <span>Pending</span><span>Rs {formatNum(r.opening_balance)}</span>
+                  <span>Opening</span><span>Rs {formatNum(r.closing_balance)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div>
         {filteredAndSortedGroups.map((group) => {
           // Calculate earliest due date for badge display
@@ -326,7 +467,6 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
             daysFromToday = getDaysFromToday((earliestDueDate as Date).toISOString());
           }
           const open = !!expanded[group.key];
-          const pendingIndexes = group.indexes.filter((i) => !sentRows[i]);
           const selectedInGroup = group.indexes.filter((i) => !!selected[i]).length;
           const isOverdueGroup = daysFromToday !== null && daysFromToday < 0;
           return (
@@ -356,7 +496,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                         background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fee" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff",
                         color: daysFromToday < 0 ? "#991b1b" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3"
                       }}>
-                        {daysFromToday < 0 ? "OVERDUE" : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
+                        {daysFromToday < 0 ? `${Math.abs(daysFromToday)}d overdue` : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
                       </span>
                     )}
                   </h3>
@@ -463,6 +603,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
           );
         })}
       </div>
+      )}
 
       {snackbar.visible ? (
         <div
