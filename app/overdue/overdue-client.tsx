@@ -403,16 +403,10 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
             const isOpen = !!expanded[billKey];
             return (
               <div className="card" key={billKey} style={{ marginBottom: 5, padding: "7px 10px", background: isSent ? "#edf2ed" : "#fff", position: "relative" }}>
-                {/* Badge pinned top-right */}
-                {daysFromToday !== null && (
-                  <span style={{ position: "absolute", top: 7, right: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fff1f1" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff", color: daysFromToday < 0 ? "#b91c1c" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3", pointerEvents: "none" }}>
-                    {daysFromToday < 0 ? `${Math.abs(daysFromToday)}d overdue` : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
-                  </span>
-                )}
                 {/* Clickable summary row */}
                 <div
                   onClick={() => setExpanded((prev) => ({ ...prev, [billKey]: !isOpen }))}
-                  style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", cursor: "pointer", paddingRight: 80 }}
+                  style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", cursor: "pointer" }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: isOverdue ? "#ca8a04" : "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2 }}>
@@ -428,20 +422,23 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                       <span style={{ fontWeight: 700, color: "#0f8a5f" }}>Rs {formatNum(r.opening_balance)}</span>
                     </div>
                   </div>
-                </div>
-                {/* Action buttons — always visible, positioned absolutely so they don't affect card height */}
-                <div style={{ position: "absolute", top: "50%", right: 10, transform: "translateY(-50%)", display: "flex", gap: 5, alignItems: "center" }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <input
-                    type="checkbox"
-                    checked={!!selected[idx]}
-                    disabled={sending || isSent}
-                    onChange={(e) => setSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
-                  />
-                  <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "3px 8px", minHeight: 26 }}>
-                    {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
-                  </button>
+                  {/* Badge + actions */}
+                  <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                    {daysFromToday !== null && (
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 999, background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fff1f1" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff", color: daysFromToday < 0 ? "#b91c1c" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3" }}>
+                        {daysFromToday < 0 ? `${Math.abs(daysFromToday)}d` : daysFromToday === 0 ? "TODAY" : daysFromToday === 1 ? "TMR" : `${daysFromToday}d`}
+                      </span>
+                    )}
+                    <input
+                      type="checkbox"
+                      checked={!!selected[idx]}
+                      disabled={sending || isSent}
+                      onChange={(e) => setSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
+                    />
+                    <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "3px 8px", minHeight: 26 }}>
+                      {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
+                    </button>
+                  </div>
                 </div>
                 {/* Expanded detail */}
                 {isOpen && (
