@@ -52,7 +52,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
   const [sending, setSending] = useState(false);
   const [sentRows, setSentRows] = useState<Record<number, boolean>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [viewMode, setViewMode] = useState<"customer" | "bill">("customer");
+  const [viewMode, setViewMode] = useState<"customer" | "bill">("bill");
   const [snackbar, setSnackbar] = useState<{ text: string; type: "success" | "error"; visible: boolean }>({
     text: "",
     type: "success",
@@ -403,14 +403,16 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
               <div className="card" key={`bill-${r.invoicenumber}-${idx}`} style={{ marginBottom: 8, padding: "10px", background: isSent ? "#edf2ed" : "#fff" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, marginBottom: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: isOverdue ? "#ca8a04" : undefined }}>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, marginBottom: 2, color: isOverdue ? "#ca8a04" : undefined, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {r.customer_name || "Unknown"}
+                    </h3>
+                    <div style={{ marginBottom: 3, minHeight: 20 }}>
                       {daysFromToday !== null && (
-                        <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 999, background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fee" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff", color: daysFromToday < 0 ? "#991b1b" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3" }}>
+                        <span style={{ display: "inline-block", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fff1f1" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff", color: daysFromToday < 0 ? "#b91c1c" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3" }}>
                           {daysFromToday < 0 ? `${Math.abs(daysFromToday)}d overdue` : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
                         </span>
                       )}
-                    </h3>
+                    </div>
                     <p style={{ fontSize: 12, margin: 0, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
