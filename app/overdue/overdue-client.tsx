@@ -399,19 +399,24 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
             const hasPhone = getPhoneDigits(r.mobile_number || fallbackPhoneByIndex[idx]).length > 0;
             const daysFromToday = getDaysFromToday(r.duedate || r.date);
             const isOverdue = daysFromToday !== null && daysFromToday < 0;
+            const billKey = `bill-${r.invoicenumber}-${idx}`;
+            const isOpen = !!expanded[billKey];
             return (
-              <div className="card" key={`bill-${r.invoicenumber}-${idx}`} style={{ marginBottom: 5, padding: "7px 10px", background: isSent ? "#edf2ed" : "#fff" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+              <div className="card" key={billKey} style={{ marginBottom: 5, padding: "7px 10px", background: isSent ? "#edf2ed" : "#fff", position: "relative" }}>
+                {/* Badge pinned top-right */}
+                {daysFromToday !== null && (
+                  <span style={{ position: "absolute", top: 7, right: 10, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fff1f1" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff", color: daysFromToday < 0 ? "#b91c1c" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3", pointerEvents: "none" }}>
+                    {daysFromToday < 0 ? `${Math.abs(daysFromToday)}d overdue` : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
+                  </span>
+                )}
+                {/* Clickable summary row */}
+                <div
+                  onClick={() => setExpanded((prev) => ({ ...prev, [billKey]: !isOpen }))}
+                  style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", cursor: "pointer", paddingRight: 80 }}
+                >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: isOverdue ? "#ca8a04" : "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "60vw" }}>
-                        {r.customer_name || "Unknown"}
-                      </span>
-                      {daysFromToday !== null && (
-                        <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, background: daysFromToday < 0 ? "#fee2e2" : daysFromToday === 0 ? "#fff1f1" : daysFromToday === 1 ? "#fef3c7" : "#e0e7ff", color: daysFromToday < 0 ? "#b91c1c" : daysFromToday === 0 ? "#991b1b" : daysFromToday === 1 ? "#92400e" : "#3730a3" }}>
-                          {daysFromToday < 0 ? `${Math.abs(daysFromToday)}d overdue` : daysFromToday === 0 ? "DUE TODAY" : daysFromToday === 1 ? "DUE TOMORROW" : `${daysFromToday}d`}
-                        </span>
-                      )}
+                    <div style={{ fontSize: 13, fontWeight: 700, color: isOverdue ? "#ca8a04" : "#1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: 2 }}>
+                      {r.customer_name || "Unknown"}
                     </div>
                     <div style={{ fontSize: 11, color: "#555", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
@@ -423,18 +428,39 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                       <span style={{ fontWeight: 700, color: "#0f8a5f" }}>Rs {formatNum(r.opening_balance)}</span>
                     </div>
                   </div>
-                  <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={!!selected[idx]}
-                      disabled={sending || isSent}
-                      onChange={(e) => setSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
-                    />
-                    <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "3px 8px", minHeight: 26 }}>
-                      {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
-                    </button>
-                  </div>
                 </div>
+                {/* Action buttons — always visible, positioned absolutely so they don't affect card height */}
+                <div style={{ position: "absolute", top: "50%", right: 10, transform: "translateY(-50%)", display: "flex", gap: 5, alignItems: "center" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!selected[idx]}
+                    disabled={sending || isSent}
+                    onChange={(e) => setSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
+                  />
+                  <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "3px 8px", minHeight: 26 }}>
+                    {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
+                  </button>
+                </div>
+                {/* Expanded detail */}
+                {isOpen && (
+                  <div className="mobile-grid" style={{ marginTop: 8, fontSize: 12, borderTop: "1px solid #e5e7eb", paddingTop: 6 }}>
+                    <span>Voucher</span><span>{r.voucher_type || r.invoicenumber || "-"}</span>
+                    <span>Bill Date</span><span>{r.date || "-"}</span>
+                    <span>Due Date</span><span>{r.duedate || "-"}</span>
+                    {(() => {
+                      const dueDate = parseDateString(r.duedate || r.date);
+                      if (!dueDate) return null;
+                      const today = new Date(); today.setHours(0,0,0,0); dueDate.setHours(0,0,0,0);
+                      const days = Math.floor((today.getTime() - dueDate.getTime()) / 86400000);
+                      if (days <= 0) return null;
+                      return <><span>Overdue Days</span><span style={{ color: "#b91c1c", fontWeight: 700 }}>{days}</span></>;
+                    })()}
+                    <span>Pending</span><span>Rs {formatNum(r.opening_balance)}</span>
+                    <span>Opening</span><span>Rs {formatNum(r.closing_balance)}</span>
+                  </div>
+                )}
               </div>
             );
           })}
