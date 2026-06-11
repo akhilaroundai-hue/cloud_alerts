@@ -182,11 +182,22 @@ function shouldSendAlert(
   schedules: ScheduleRow[],
   now: Date
 ): boolean {
-  const currentHH = String(now.getHours()).padStart(2, "0");
-  const currentMM = String(now.getMinutes()).padStart(2, "0");
+  const timeZone = process.env.BUSINESS_TIME_ZONE || "Asia/Kolkata";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    weekday: "short",
+    day: "2-digit",
+    hour12: false,
+  }).formatToParts(now);
+
+  const currentHH = parts.find((p) => p.type === "hour")?.value?.padStart(2, "0") ?? "00";
+  const currentMM = parts.find((p) => p.type === "minute")?.value?.padStart(2, "0") ?? "00";
   const currentTime = `${currentHH}:${currentMM}`;
-  const currentDay = now.getDay();
-  const currentDate = now.getDate();
+  const currentDate = Number(parts.find((p) => p.type === "day")?.value ?? "0");
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const currentDay = weekdayMap[parts.find((p) => p.type === "weekday")?.value ?? ""] ?? now.getDay();
 
   return schedules.some((s) => {
     if (s.alert_time !== currentTime) return false;
