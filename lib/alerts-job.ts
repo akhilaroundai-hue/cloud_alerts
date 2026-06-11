@@ -172,10 +172,15 @@ async function getCompanySchedules(companyId: string): Promise<ScheduleRow[]> {
   const q = new URL(`${url}/rest/v1/alert_schedules`);
   q.searchParams.set("select", "alert_type,alert_time,repeat_pattern,day_of_week");
   q.searchParams.set("company_id", `eq.${companyId}`);
-  q.searchParams.set("is_active", "eq.true");
+  // FIX 1: Removed is_active filter - column doesn't exist in admin_portal schema
   const res = await fetch(q.toString(), { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" });
-  if (!res.ok) return [];
-  return (await res.json()) as ScheduleRow[];
+  if (!res.ok) {
+    console.error(`[getCompanySchedules] Failed for ${companyId}:`, res.status);
+    return [];
+  }
+  const data = await res.json();
+  console.log(`[getCompanySchedules] ${companyId}:`, data);
+  return data as ScheduleRow[];
 }
 
 function shouldSendAlert(
@@ -199,7 +204,11 @@ function shouldSendAlert(
   const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   const currentDay = weekdayMap[parts.find((p) => p.type === "weekday")?.value ?? ""] ?? now.getDay();
 
+  console.log(`[shouldSendAlert] Current time: ${currentTime}, day: ${currentDay}, date: ${currentDate}`);
+  console.log(`[shouldSendAlert] Checking schedules:`, schedules);
+
   return schedules.some((s) => {
+    console.log(`[shouldSendAlert] Comparing schedule ${s.alert_time} vs current ${currentTime}`);
     if (s.alert_time !== currentTime) return false;
     switch (s.repeat_pattern) {
       case "daily":
@@ -251,27 +260,21 @@ function buildDaybookLink(accessToken: string): string | undefined {
 export async function runAlertsJob(): Promise<{
   companies: number;
   overdueSent: number;
-  // creditSent: number;    // DISABLED
-  // reorderSent: number;  // DISABLED
-  // daybookSent: number;  // DISABLED
-  // daybookSkipped: number; // DISABLED
-  // daybookFailed: number; // DISABLED
-  // daybookRows: number;  // DISABLED
 }> {
   const overdueThreshold = Number(process.env.OVERDUE_CUSTOMERS_THRESHOLD || "1");
   const overdueDaysThreshold = Number(process.env.OVERDUE_DAYS_THRESHOLD || "1");
-  // const creditThresholdPercent = Number(process.env.DEFAULT_CREDIT_THRESHOLD_PERCENT || "90"); // DISABLED
   const overdueTemplate = process.env.INTERAKT_TEMPLATE_NAME || "";
-  // const creditTemplate = process.env.INTERAKT_CREDIT_ALERT_TEMPLATE_NAME || ""; // DISABLED
-  // const reorderTemplate = process.env.INTERAKT_REORDER_ALERT_TEMPLATE_NAME || ""; // DISABLED
-  // const daybookTemplate = process.env.INTERAKT_DAYBOOK_TEMPLATE_NAME || ""; // DISABLED
   const interaktEnabled = String(process.env.INTERAKT_ENABLED || "false").toLowerCase() === "true";
   const today = businessDate();
+
+  console.log(`[runAlertsJob] Starting job. interaktEnabled=${interaktEnabled}, template=${overdueTemplate}, today=${today}`);
 
   const companies = await sbSelect<CompanyRow>("tally_companies", {
     select: "id,Guid,company_name,owner_number,owner_phone_number,owner_numbers,access_token,is_active",
     limit: "10000",
   });
+
+  console.log(`[runAlertsJob] Found ${companies.length} companies`);
 
   let overdueSent = 0;
   // let creditSent = 0;       // DISABLED
@@ -289,11 +292,32 @@ export async function runAlertsJob(): Promise<{
     const companyName = String(company.company_name || "").trim();
     if (!companyGuid && !companyName) continue;
 
-    const schedules = await getCompanySchedules(String(company.id || "")).catch(() => [] as ScheduleRow[]);
-    if (schedules.length === 0) continue;
+    // FIX 2: Added debug logging to track schedule fetching
+    console.log(`[runAlertsJob] Processing company: ${companyName} (id=${company.id})`);
+    
+    const schedules = await getCompanySchedules(String(company.id || ""));
+    console.log(`[runAlertsJob] Found ${schedules.length} schedules for ${companyName}`);
+    
+    if (schedules.length === 0) {
+      console.log(`[runAlertsJob] No schedules for ${companyName}, skipping`);
+      continue;
+    }
 
     const overdueSchedules = schedules.filter((s) => s.alert_type === "overdue");
-    if (overdueSchedules.length === 0 || !shouldSendAlert(overdueSchedules, now)) continue;
+    console.log(`[runAlertsJob] Found ${overdueSchedules.length} overdue schedules for ${companyName}`);
+    
+    if (overdueSchedules.length === 0) {
+      console.log(`[runAlertsJob] No overdue schedules for ${companyName}, skipping`);
+      continue;
+    }
+
+    const shouldSend = shouldSendAlert(overdueSchedules, now);
+    console.log(`[runAlertsJob] shouldSendAlert for ${companyName}: ${shouldSend}`);
+    
+    if (!shouldSend) {
+      console.log(`[runAlertsJob] Time/day mismatch for ${companyName}, skipping`);
+      continue;
+    }
 
     let outstanding = await sbSelect<OutstandingRow>("outstanding", {
       select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
@@ -318,6 +342,8 @@ export async function runAlertsJob(): Promise<{
     const totalOverdue = overdueRows.reduce((acc, r) => acc + n(r.closing_balance), 0);
     const maxOverdue = overdueRows.reduce((acc, r) => Math.max(acc, overdueDays(r, today)), 0);
     const triggered = overdueCustomers.size >= overdueThreshold;
+
+    console.log(`[runAlertsJob] ${companyName}: ${overdueCustomers.size} customers, ${overdueRows.length} bills, triggered=${triggered}`);
 
     await sbUpsert(
       "overdue_anomaly_snapshots",
@@ -386,7 +412,13 @@ export async function runAlertsJob(): Promise<{
     const phones = ownerPhones(company);
     const primaryOwnerPhone = phones[0] || "";
     const accessToken = String(company.access_token || "").trim() || primaryOwnerPhone;
-    if (!interaktEnabled || phones.length === 0) continue;
+    
+    console.log(`[runAlertsJob] ${companyName}: phones=${phones.join(',')}, interaktEnabled=${interaktEnabled}`);
+    
+    if (!interaktEnabled || phones.length === 0) {
+      console.log(`[runAlertsJob] ${companyName}: Skipping - interaktEnabled=${interaktEnabled}, phones=${phones.length}`);
+      continue;
+    }
 
     /* DISABLED: Daybook alert (disabled)
     if (daybookTemplate) {
@@ -473,19 +505,28 @@ export async function runAlertsJob(): Promise<{
       limit: "1",
     }).catch(() => []);
 
-    if (existingOverdueLogs.length > 0) continue;
+    console.log(`[runAlertsJob] ${companyName}: existing logs=${existingOverdueLogs.length}`);
+
+    if (existingOverdueLogs.length > 0) {
+      console.log(`[runAlertsJob] ${companyName}: Already sent today, skipping`);
+      continue;
+    }
 
     if (triggered && overdueTemplate) {
+      console.log(`[runAlertsJob] ${companyName}: SENDING ALERTS to ${phones.length} phones`);
       for (const ownerPhone of phones) {
         try {
           const resp = await sendInteraktTemplate(ownerPhone, overdueTemplate, [], buildOverdueLink(accessToken));
           overdueSent += 1;
+          console.log(`[runAlertsJob] ${companyName}: Sent to ${ownerPhone}`);
           await sbInsert("overdue_alert_logs", [{ snapshot_date: today, company_id: logCompanyId, status: "sent", owner_phone_number: ownerPhone, overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: resp }]);
         } catch (e) {
+          console.error(`[runAlertsJob] ${companyName}: Failed to send to ${ownerPhone}:`, e);
           await sbInsert("overdue_alert_logs", [{ snapshot_date: today, company_id: logCompanyId, status: "failed", owner_phone_number: ownerPhone, overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: { error: e instanceof Error ? e.message : "Unknown error" } }]);
         }
       }
     } else {
+      console.log(`[runAlertsJob] ${companyName}: Not triggered or no template, skipping`);
       await sbInsert("overdue_alert_logs", [{ snapshot_date: today, company_id: logCompanyId, status: "skipped", owner_phone_number: phones.join(","), overdue_customer_count: overdueCustomers.size, overdue_bill_count: overdueRows.length, response_json: { reason: "threshold_not_met_or_template_missing" } }]);
     }
 
@@ -578,6 +619,6 @@ export async function runAlertsJob(): Promise<{
     */
   }
 
+  console.log(`[runAlertsJob] Finished. Companies: ${companies.length}, Sent: ${overdueSent}`);
   return { companies: companies.length, overdueSent };
-  // return { companies: companies.length, overdueSent, creditSent, reorderSent, daybookSent, daybookSkipped, daybookFailed, daybookRows: daybookRowsTotal }; // DISABLED
 }
