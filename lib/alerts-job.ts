@@ -182,11 +182,11 @@ function shouldSendAlert(
   schedules: ScheduleRow[],
   now: Date
 ): boolean {
-  const currentHH = String(now.getUTCHours()).padStart(2, "0");
-  const currentMM = String(now.getUTCMinutes()).padStart(2, "0");
+  const currentHH = String(now.getHours()).padStart(2, "0");
+  const currentMM = String(now.getMinutes()).padStart(2, "0");
   const currentTime = `${currentHH}:${currentMM}`;
-  const currentDay = now.getUTCDay();
-  const currentDate = now.getUTCDate();
+  const currentDay = now.getDay();
+  const currentDate = now.getDate();
 
   return schedules.some((s) => {
     if (s.alert_time !== currentTime) return false;
