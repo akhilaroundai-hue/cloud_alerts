@@ -172,15 +172,10 @@ async function getCompanySchedules(companyId: string): Promise<ScheduleRow[]> {
   const q = new URL(`${url}/rest/v1/alert_schedules`);
   q.searchParams.set("select", "alert_type,alert_time,repeat_pattern,day_of_week");
   q.searchParams.set("company_id", `eq.${companyId}`);
-  // FIX 1: Removed is_active filter - column doesn't exist in admin_portal schema
+  q.searchParams.set("is_active", "eq.true");
   const res = await fetch(q.toString(), { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" });
-  if (!res.ok) {
-    console.error(`[getCompanySchedules] Failed for ${companyId}:`, res.status);
-    return [];
-  }
-  const data = await res.json();
-  console.log(`[getCompanySchedules] ${companyId}:`, data);
-  return data as ScheduleRow[];
+  if (!res.ok) return [];
+  return (await res.json()) as ScheduleRow[];
 }
 
 function shouldSendAlert(
@@ -204,17 +199,27 @@ function shouldSendAlert(
   const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   const currentDay = weekdayMap[parts.find((p) => p.type === "weekday")?.value ?? ""] ?? now.getDay();
 
-  console.log(`[shouldSendAlert] Current time: ${currentTime}, day: ${currentDay}, date: ${currentDate}`);
-  console.log(`[shouldSendAlert] Checking schedules:`, schedules);
-
   return schedules.some((s) => {
-    console.log(`[shouldSendAlert] Comparing schedule ${s.alert_time} vs current ${currentTime}`);
-    if (s.alert_time !== currentTime) return false;
+    // Allow 5-minute tolerance for time matching
+    const [schedHour, schedMin] = s.alert_time.split(':').map(Number);
+    const [currHour, currMin] = currentTime.split(':').map(Number);
+    if (schedHour !== currHour) return false;
+    if (Math.abs(schedMin - currMin) > 5) return false;
+
+    // Handle day_of_week as array (could be string like "{0,1}" or actual array)
+    let daysArray: number[] | null = null;
+    const dow = s.day_of_week as number[] | string | null;
+    if (Array.isArray(dow)) {
+      daysArray = dow;
+    } else if (typeof dow === 'string') {
+      daysArray = dow.replace(/[{}]/g, '').split(',').map((n: string) => parseInt(n.trim())).filter((n: number) => !isNaN(n));
+    }
+
     switch (s.repeat_pattern) {
       case "daily":
         return true;
       case "weekly":
-        return Array.isArray(s.day_of_week) ? s.day_of_week.includes(currentDay) : false;
+        return daysArray ? daysArray.includes(currentDay) : false;
       case "monthly":
         return currentDate === 1;
       default:
@@ -303,7 +308,7 @@ export async function runAlertsJob(): Promise<{
       continue;
     }
 
-    const overdueSchedules = schedules.filter((s) => s.alert_type === "overdue");
+    const overdueSchedules = schedules.filter((s) => s.alert_type === "overdue" || s.alert_type === "outstanding");
     console.log(`[runAlertsJob] Found ${overdueSchedules.length} overdue schedules for ${companyName}`);
     
     if (overdueSchedules.length === 0) {
@@ -319,11 +324,21 @@ export async function runAlertsJob(): Promise<{
       continue;
     }
 
+    // Try company.id first (matches outstanding.company_id), then Guid, then companyName
     let outstanding = await sbSelect<OutstandingRow>("outstanding", {
       select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
-      company_id: `eq.${companyGuid}`,
+      company_id: `eq.${String(company.id || "")}`,
       limit: "20000",
     });
+
+    if (!outstanding.length && companyGuid) {
+      outstanding = await sbSelect<OutstandingRow>("outstanding", {
+        select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
+        company_id: `eq.${companyGuid}`,
+        limit: "20000",
+      });
+    }
+
     if (!outstanding.length && companyName) {
       const allRows = await sbSelect<OutstandingRow>("outstanding", {
         select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
