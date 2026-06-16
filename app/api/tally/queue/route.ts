@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     const q = new URL(`${supabaseUrl}/rest/v1/tally_reminder_queue`);
     q.searchParams.set(
       "select",
-      "id,batch_id,customer_name,mobile_number,invoice_number,amount,send_date,queued_at"
+      "id,batch_id,customer_name,mobile_number,invoice_number,invoice_date,amount,send_date,queued_at"
     );
     q.searchParams.set("company_id", `eq.${lookupId}`);
     q.searchParams.set("send_date", `eq.${today}`);

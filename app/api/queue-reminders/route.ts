@@ -8,6 +8,7 @@ type QueueInputRow = {
   mobile_number: string | number | null;
   invoicenumber: string;
   closing_balance: string;
+  date?: string | null;
 };
 
 function digits(v: string | number | null | undefined): string {
@@ -79,6 +80,7 @@ export async function POST(req: NextRequest) {
       customer_name: row.customer_name || null,
       mobile_number: digits(row.mobile_number) || null,
       invoice_number: row.invoicenumber || null,
+      invoice_date: row.date || null,
       amount: row.closing_balance || "0",
       send_date: sendDate,
       status: "pending",
@@ -189,7 +191,7 @@ export async function GET(req: NextRequest) {
     const q = new URL(`${supabaseUrl}/rest/v1/tally_reminder_queue`);
     q.searchParams.set(
       "select",
-      "id,batch_id,Guid,customer_name,mobile_number,invoice_number,amount,send_date,status,queued_at,processed_at,tally_response"
+      "id,batch_id,Guid,customer_name,mobile_number,invoice_number,invoice_date,amount,send_date,status,queued_at,processed_at,tally_response"
     );
     q.searchParams.set("company_id", `eq.${lookupId}`);
     q.searchParams.set("order", "queued_at.desc");
