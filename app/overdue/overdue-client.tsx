@@ -272,9 +272,9 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
         return next;
       });
 
-      showSnackbar(`Queued ${data.queued_count || targetIndexes.length} reminder(s) for Tally.`, "success");
+      showSnackbar(`Sent ${data.queued_count || targetIndexes.length} reminder(s) to Tally queue.`, "success");
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : "Failed to queue reminders", "error");
+      showSnackbar(err instanceof Error ? err.message : "Failed to send reminders", "error");
     } finally {
       setSending(false);
     }
@@ -507,7 +507,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                       onChange={(e) => setSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
                     />
                     <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "3px 8px", minHeight: 26 }}>
-                      {isSent ? "Queued" : hasPhone ? "Queue" : "No Phone"}
+                      {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
                     </button>
                   </div>
                 </div>
@@ -656,7 +656,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                             Ref: {r.invoicenumber || "-"}
                           </label>
                           <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "4px 8px", minHeight: 28 }}>
-                            {isSent ? "Queued" : hasPhone ? "Queue" : "No Phone"}
+                            {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
                           </button>
                         </div>
                         <div className="mobile-grid" style={{ marginTop: 6, fontSize: 12 }}>

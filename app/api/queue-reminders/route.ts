@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
     const insertRows = filteredRows.map((row) => ({
       batch_id: batchId,
       company_id: companyGuid || companyId,
+      company_guid: companyGuid || null,
       company_name: companyName || row.company_name || null,
       customer_name: row.customer_name || null,
       mobile_number: digits(row.mobile_number) || null,
@@ -188,7 +189,7 @@ export async function GET(req: NextRequest) {
     const q = new URL(`${supabaseUrl}/rest/v1/tally_reminder_queue`);
     q.searchParams.set(
       "select",
-      "id,batch_id,customer_name,mobile_number,invoice_number,amount,send_date,status,queued_at,processed_at,tally_response"
+      "id,batch_id,company_guid,customer_name,mobile_number,invoice_number,amount,send_date,status,queued_at,processed_at,tally_response"
     );
     q.searchParams.set("company_id", `eq.${lookupId}`);
     q.searchParams.set("order", "queued_at.desc");
