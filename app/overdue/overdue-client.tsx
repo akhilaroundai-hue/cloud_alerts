@@ -16,6 +16,20 @@ type Row = {
   voucher_type: string | null;
 };
 
+type HistoryRow = {
+  id: number;
+  batch_id: string;
+  customer_name: string | null;
+  mobile_number: string | null;
+  invoice_number: string | null;
+  amount: string | null;
+  send_date: string | null;
+  status: string;
+  queued_at: string;
+  processed_at: string | null;
+  tally_response: unknown;
+};
+
 function formatNum(v: string | number | null | undefined): string {
   if (v === null || v === undefined) return "0.00";
   const n = Number(v);
@@ -60,6 +74,10 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
   });
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"duedate" | "amount" | "customer" | "overdue" | "recent">("recent");
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyRows, setHistoryRows] = useState<HistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [expandedBatches, setExpandedBatches] = useState<Record<string, boolean>>({});
 
   const grouped = useMemo(() => {
     const map = new Map<string, { key: string; customer: string; phone: string | number | null; indexes: number[]; total: number }>();
@@ -221,7 +239,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
   async function sendRows(indexes: number[]) {
     const targetIndexes = indexes.filter((i) => !sentRows[i]);
     if (targetIndexes.length === 0) {
-      showSnackbar("Nothing pending to send for selected item(s).", "error");
+      showSnackbar("Nothing pending to queue for selected item(s).", "error");
       return;
     }
 
@@ -232,19 +250,17 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
         const effectivePhone = getPhoneDigits(row.mobile_number) ? row.mobile_number : fallbackPhoneByIndex[i] || null;
         return { ...row, mobile_number: effectivePhone };
       });
-      const res = await fetch("/api/send-reminders", {
+      const res = await fetch("/api/queue-reminders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accessToken, rows: payload }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to send reminders");
+      if (!res.ok) throw new Error(data?.error || "Failed to queue reminders");
 
-      const results = Array.isArray(data.results) ? data.results : [];
       const sentIndexMap: Record<number, boolean> = {};
-      targetIndexes.forEach((rowIndex, idx) => {
-        const r = results[idx];
-        if (r?.ok) sentIndexMap[rowIndex] = true;
+      targetIndexes.forEach((rowIndex) => {
+        sentIndexMap[rowIndex] = true;
       });
 
       setSentRows((prev) => ({ ...prev, ...sentIndexMap }));
@@ -256,15 +272,9 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
         return next;
       });
 
-      if ((data.failed_count || 0) === 0 && (data.sent_count || 0) > 0) {
-        showSnackbar(`Success: ${data.sent_count} reminder${data.sent_count > 1 ? "s" : ""} sent.`, "success");
-      } else if ((data.sent_count || 0) > 0) {
-        showSnackbar(`Partially sent: ${data.sent_count} sent, ${data.failed_count} failed.`, "success");
-      } else {
-        showSnackbar(`No reminders sent. Failed: ${data.failed_count || 0}.`, "error");
-      }
+      showSnackbar(`Queued ${data.queued_count || targetIndexes.length} reminder(s) for Tally.`, "success");
     } catch (err) {
-      showSnackbar(err instanceof Error ? err.message : "Failed to send reminders", "error");
+      showSnackbar(err instanceof Error ? err.message : "Failed to queue reminders", "error");
     } finally {
       setSending(false);
     }
@@ -276,6 +286,41 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
       return;
     }
     await sendRows(selectedIndexes);
+  }
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/queue-reminders?access=${encodeURIComponent(accessToken)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to load history");
+      setHistoryRows(Array.isArray(data.rows) ? data.rows : []);
+    } catch (e) {
+      showSnackbar(e instanceof Error ? e.message : "Failed to load history", "error");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function markBatchDone(batchId: string) {
+    try {
+      const res = await fetch("/api/queue-reminders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken, batch_id: batchId, status: "sent" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to update");
+      showSnackbar("Batch marked as done.", "success");
+      await loadHistory();
+    } catch (e) {
+      showSnackbar(e instanceof Error ? e.message : "Failed to mark as done", "error");
+    }
+  }
+
+  function toggleHistory() {
+    if (!showHistory) loadHistory();
+    setShowHistory((p) => !p);
   }
 
   const filteredBillRows = useMemo(() => {
@@ -323,6 +368,26 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
     });
     return result;
   }, [rows, search, sortBy]);
+
+  const historyBatches = useMemo(() => {
+    const map = new Map<string, HistoryRow[]>();
+    for (const row of historyRows) {
+      const arr = map.get(row.batch_id) || [];
+      arr.push(row);
+      map.set(row.batch_id, arr);
+    }
+    return Array.from(map.values()).map((batchRows) => ({
+      batchId: batchRows[0].batch_id,
+      queuedAt: batchRows[0].queued_at,
+      sendDate: batchRows[0].send_date || null,
+      total: batchRows.length,
+      pending: batchRows.filter((r) => r.status === "pending").length,
+      sent: batchRows.filter((r) => r.status === "sent").length,
+      failed: batchRows.filter((r) => r.status === "failed").length,
+      dispatched: batchRows.filter((r) => r.status === "dispatched").length,
+      rows: batchRows,
+    }));
+  }, [historyRows]);
 
   return (
     <>
@@ -387,7 +452,13 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
           <button onClick={() => toggleAll(true)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Select all</button>
           <button onClick={() => toggleAll(false)} disabled={sending} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>Clear</button>
           <button onClick={sendSelected} disabled={sending || selectedIndexes.length === 0} style={{ fontSize: 12, padding: "5px 10px", minHeight: 32 }}>
-            {sending ? "Sending..." : "Send Selected"}
+            {sending ? "Queuing..." : "Send Messages"}
+          </button>
+          <button
+            onClick={toggleHistory}
+            style={{ fontSize: 12, padding: "5px 10px", minHeight: 32, borderRadius: 6, border: showHistory ? "1px solid #2563eb" : "1px solid #cfd8cf", background: showHistory ? "#eff6ff" : "#fff", color: showHistory ? "#2563eb" : "#374151", fontWeight: showHistory ? 700 : 400 }}
+          >
+            {showHistory ? "Hide History" : "History"}
           </button>
         </div>
       </div>
@@ -436,7 +507,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                       onChange={(e) => setSelected((prev) => ({ ...prev, [idx]: e.target.checked }))}
                     />
                     <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "3px 8px", minHeight: 26 }}>
-                      {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
+                      {isSent ? "Queued" : hasPhone ? "Queue" : "No Phone"}
                     </button>
                   </div>
                 </div>
@@ -585,7 +656,7 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
                             Ref: {r.invoicenumber || "-"}
                           </label>
                           <button disabled={sending || isSent || !hasPhone} onClick={() => sendRows([idx])} style={{ fontSize: 11, padding: "4px 8px", minHeight: 28 }}>
-                            {isSent ? "Sent" : hasPhone ? "Send" : "No Phone"}
+                            {isSent ? "Queued" : hasPhone ? "Queue" : "No Phone"}
                           </button>
                         </div>
                         <div className="mobile-grid" style={{ marginTop: 6, fontSize: 12 }}>
@@ -614,6 +685,76 @@ export default function OverdueClient({ rows, accessToken }: { rows: Row[]; acce
           );
         })}
       </div>
+      )}
+
+      {showHistory && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Message Queue History</h3>
+            <button onClick={loadHistory} disabled={historyLoading} style={{ fontSize: 12, padding: "4px 10px", minHeight: 28 }}>
+              {historyLoading ? "Loading..." : "Refresh"}
+            </button>
+          </div>
+          {historyLoading && <div className="card"><p style={{ fontSize: 13 }}>Loading history...</p></div>}
+          {!historyLoading && historyBatches.length === 0 && (
+            <div className="card"><p style={{ fontSize: 13 }}>No queued messages found.</p></div>
+          )}
+          {!historyLoading && historyBatches.map((batch) => {
+            const isExpanded = !!expandedBatches[batch.batchId];
+            const sendDateLabel = batch.sendDate || (() => { try { return new Date(batch.queuedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }); } catch { return batch.queuedAt; } })();
+            const batchTime = (() => { try { return new Date(batch.queuedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } })();
+            return (
+              <div className="card" key={batch.batchId} style={{ marginBottom: 8 }}>
+                <div
+                  onClick={() => setExpandedBatches((prev) => ({ ...prev, [batch.batchId]: !isExpanded }))}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{sendDateLabel} <span style={{ fontWeight: 400, color: "#6b7280", fontSize: 12 }}>{batchTime}</span></div>
+                    <div style={{ fontSize: 12, color: "#555", marginTop: 2, display: "flex", gap: 10 }}>
+                      <span>{batch.total} customer(s)</span>
+                      {batch.pending > 0 && <span style={{ color: "#92400e" }}>{batch.pending} pending</span>}
+                      {batch.dispatched > 0 && <span style={{ color: "#1d4ed8" }}>{batch.dispatched} dispatched to Tally</span>}
+                      {batch.sent > 0 && <span style={{ color: "#065f46" }}>{batch.sent} done</span>}
+                      {batch.failed > 0 && <span style={{ color: "#991b1b" }}>{batch.failed} failed</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
+                    {(batch.pending > 0 || batch.dispatched > 0) && (
+                      <button
+                        onClick={() => markBatchDone(batch.batchId)}
+                        style={{ fontSize: 11, padding: "3px 8px", minHeight: 26, background: "#065f46", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}
+                      >
+                        Mark Done
+                      </button>
+                    )}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      {isExpanded ? <polyline points="18 15 12 9 6 15"></polyline> : <polyline points="6 9 12 15 18 9"></polyline>}
+                    </svg>
+                  </div>
+                </div>
+                {isExpanded && (
+                  <div style={{ marginTop: 8 }}>
+                    {batch.rows.map((row) => (
+                      <div key={row.id} style={{ fontSize: 12, padding: "6px 0", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <span style={{ fontWeight: 600 }}>{row.customer_name || "-"}</span>
+                          <span style={{ color: "#555", marginLeft: 6 }}>{row.mobile_number || "No phone"}</span>
+                          {row.invoice_number && <span style={{ color: "#374151", marginLeft: 6 }}>Ref: {row.invoice_number}</span>}
+                          <span style={{ color: "#0f8a5f", marginLeft: 6 }}>Rs {row.amount || "0"}</span>
+                          {row.processed_at && <span style={{ color: "#6b7280", marginLeft: 6, fontSize: 11 }}>Processed: {(() => { try { return new Date(row.processed_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); } catch { return row.processed_at; } })()}</span>}
+                        </div>
+                        <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: row.status === "sent" ? "#d1fae5" : row.status === "failed" ? "#fee2e2" : row.status === "dispatched" ? "#dbeafe" : "#fef3c7", color: row.status === "sent" ? "#065f46" : row.status === "failed" ? "#991b1b" : row.status === "dispatched" ? "#1d4ed8" : "#92400e" }}>
+                          {row.status.toUpperCase()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {snackbar.visible ? (

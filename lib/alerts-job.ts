@@ -223,17 +223,18 @@ export async function runAlertsJob(): Promise<{
     const companyGuid = String(company.Guid || "").trim();
     const companyName = String(company.company_name || "").trim();
     if (!companyGuid && !companyName) continue;
+    try {
 
     let outstanding = await sbSelect<OutstandingRow>("outstanding", {
       select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
       company_id: `eq.${companyGuid}`,
       limit: "20000",
-    });
+    }).catch(() => [] as OutstandingRow[]);
     if (!outstanding.length && companyName) {
       const allRows = await sbSelect<OutstandingRow>("outstanding", {
         select: "company_id,company_name,customer_name,opening_balance,closing_balance,amount,date,duedate,overdue_days,bill_type",
         limit: "20000",
-      });
+      }).catch(() => [] as OutstandingRow[]);
       outstanding = allRows.filter((r) => norm(r.company_name) === norm(companyName));
     }
 
@@ -253,6 +254,7 @@ export async function runAlertsJob(): Promise<{
       [
         {
           snapshot_date: today,
+          company_id: companyGuid,
           overdue_customer_count: overdueCustomers.size,
           overdue_bill_count: overdueRows.length,
           total_overdue_amount: String(totalOverdue),
@@ -260,14 +262,14 @@ export async function runAlertsJob(): Promise<{
           triggered,
         },
       ],
-      "snapshot_date",
-    );
+      "snapshot_date,company_id",
+    ).catch((e: unknown) => console.warn(`[alerts-job] overdue_anomaly_snapshots upsert skipped for ${companyGuid}: ${e instanceof Error ? e.message : e}`));
 
     const customers = await sbSelect<{ customer_name: string; credit_limit: string | number | null; company_name: string | null }>("customers", {
       select: "customer_name,credit_limit,company_name",
       is_active: "eq.true",
       limit: "20000",
-    });
+    }).catch(() => [] as Array<{ customer_name: string; credit_limit: string | number | null; company_name: string | null }>);
     const scopedCustomers = customers.filter((c) => norm(c.company_name) === norm(companyName));
 
     const usedByCustomer = new Map<string, number>();
@@ -308,7 +310,7 @@ export async function runAlertsJob(): Promise<{
       });
       if (anomalyType) pendingCreditAlerts.push({ customerName: c.customer_name, used, limit, thresholdPercent: creditThresholdPercent });
     }
-    if (creditLogs.length) await sbUpsert("credit_anomaly_logs", creditLogs, "snapshot_date,company_id,customer_name,anomaly_type");
+    if (creditLogs.length) await sbInsert("credit_anomaly_logs", creditLogs).catch((e: unknown) => console.warn(`[alerts-job] credit_anomaly_logs insert skipped for ${companyGuid}: ${e instanceof Error ? e.message : e}`));
 
     const phones = ownerPhones(company);
     const primaryOwnerPhone = phones[0] || "";
@@ -485,6 +487,9 @@ export async function runAlertsJob(): Promise<{
       }
     } catch {
       // Keep overdue/credit pipeline alive even when products schema/table differs.
+    }
+    } catch (companyError: unknown) {
+      console.error(`[alerts-job] company ${companyGuid || company.id} failed: ${companyError instanceof Error ? companyError.message : companyError}`);
     }
   }
 
